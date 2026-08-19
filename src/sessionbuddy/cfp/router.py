@@ -3003,7 +3003,7 @@ async def create_submission(
         await db.prepare(
             """SELECT f.id, f.organization_id, f.event_id, f.slug, f.version, f.schema_json,
                       f.opens_at_ms, f.closes_at_ms, f.submission_limit,
-                      f.confirmation_subject, f.confirmation_body
+                      f.confirmation_subject, f.confirmation_body, e.name AS event_name
                FROM call_for_speaker_forms f
                JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
                WHERE f.slug = ?1 AND f.status = 'published' AND e.status = 'active'"""
@@ -3358,6 +3358,7 @@ async def create_submission(
     )
     confirmation_html = (
         f"<p>{escape(str(form['confirmation_body']))}</p>"
+        f"<p>Event: {escape(str(form['event_name']))}</p>"
         f"<p><strong>{escape(body.proposal_title)}</strong></p>"
         f'<p><a href="{proposal_url}">View your proposal</a></p>'
         f"<p>Receipt: {escape(submission_id)}</p>"

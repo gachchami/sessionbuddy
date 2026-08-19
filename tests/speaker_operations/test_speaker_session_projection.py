@@ -172,7 +172,10 @@ def test_projection_exposes_only_approved_content_and_published_schedule(db) -> 
     )
 
 
-def test_projection_preserves_proposal_participant_role_and_scope(db) -> None:
+@pytest.mark.parametrize("explicit_participant", [False, True])
+def test_projection_preserves_proposal_participant_role_and_scope(
+    db, explicit_participant
+) -> None:
     db.execute(
         """INSERT INTO submission_decisions
            (id,organization_id,event_id,round_id,submission_id,decision,internal_reason,
@@ -193,13 +196,14 @@ def test_projection_preserves_proposal_participant_role_and_scope(db) -> None:
            VALUES('submission-link','org-a','event-a','submission-a','speaker-a',
                   'co_speaker','Speaker A',1000)"""
     )
-    db.execute(
-        """INSERT INTO accepted_session_participants
-           (id,organization_id,event_id,accepted_session_id,event_speaker_id,
-            display_name_snapshot,created_at_ms,updated_at_ms)
-           VALUES('proposal-participant','org-a','event-a','proposal-session','speaker-a',
-                  'Speaker A',1000,1000)"""
-    )
+    if explicit_participant:
+        db.execute(
+            """INSERT INTO accepted_session_participants
+               (id,organization_id,event_id,accepted_session_id,event_speaker_id,
+                display_name_snapshot,created_at_ms,updated_at_ms)
+               VALUES('proposal-participant','org-a','event-a','proposal-session','speaker-a',
+                      'Speaker A',1000,1000)"""
+        )
     _organizer_session(db, session_id="withdrawn", lifecycle_status="withdrawn")
     db.execute(
         """INSERT INTO people
@@ -235,7 +239,10 @@ def test_projection_preserves_proposal_participant_role_and_scope(db) -> None:
     assert rows[0]["participant_role"] == "co_speaker"
 
     db.execute("DELETE FROM submission_speakers WHERE id='submission-link'")
-    assert _project(db)[0]["participant_role"] == "speaker"
+    if explicit_participant:
+        assert _project(db)[0]["participant_role"] == "speaker"
+    else:
+        assert _project(db) == []
 
 
 def test_projection_uses_the_participant_first_index(db) -> None:

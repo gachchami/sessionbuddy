@@ -212,6 +212,45 @@ test.describe("scorecard criterion types", () => {
     await expect(row.locator('select[name="criterion_purpose"]')).toHaveValue("");
   });
 
+  test("zero weight switched to Free text submits null without hidden validation", async ({ page }) => {
+    const saves = await roundReadyToOpen(page);
+    await criterionRow(page, 0).locator('input[name="criterion_weight"]').fill("100");
+    await criterionRow(page, 1).locator('input[name="criterion_weight"]').fill("0");
+    await setCriterionType(page, 1, "text");
+    await setCriterionType(page, 2, "text");
+    expect(await hiddenInvalidControls(page)).toEqual([]);
+    await page.getByRole("button", { name: "Open evaluation round" }).click();
+    await expect(page.locator("#status")).toContainText("opened with");
+    expect(saves).toHaveLength(1);
+    expect((saves[0].body.criteria as Record<string, unknown>[])[1]).toMatchObject({
+      response_type: "text", weight: null,
+    });
+  });
+
+  test("switching back to Score preserves its draft weight and restores validation", async ({ page }) => {
+    const saves = await roundReadyToOpen(page);
+    const weight = criterionRow(page, 1).locator('input[name="criterion_weight"]');
+    for (const value of ["35", "0"]) {
+      await weight.fill(value);
+      await setCriterionType(page, 1, "text");
+      await expect(weight).toBeDisabled();
+      await setCriterionType(page, 1, "score");
+      await expect(weight).toBeEnabled();
+      await expect(weight).toHaveValue(value);
+      await expect(weight).toHaveAttribute("min", "1");
+      await expect(weight).toHaveAttribute("required", "");
+    }
+    await page.getByRole("button", { name: "Open evaluation round" }).click();
+    expect(saves).toHaveLength(0);
+    expect(await validationMessage(weight)).not.toBe("");
+    await setCriterionType(page, 1, "text");
+    await setCriterionType(page, 2, "text");
+    await criterionRow(page, 0).locator('input[name="criterion_weight"]').fill("100");
+    await page.getByRole("button", { name: "Open evaluation round" }).click();
+    await expect(page.locator("#status")).toContainText("opened with");
+    expect((saves[0].body.criteria as Record<string, unknown>[])[1].weight).toBeNull();
+  });
+
   test("a designated recommendation derives the legacy choices and hides legacy authoring", async ({ page }) => {
     const saves = await roundReadyToOpen(page);
     const row = criterionRow(page, 0);

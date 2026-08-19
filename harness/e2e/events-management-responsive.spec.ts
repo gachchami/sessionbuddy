@@ -209,3 +209,38 @@ test("an archived event keeps its past dates when saved from routed settings", a
   await expect(page.locator("#editor-status")).toHaveText("Event saved.");
   await expect(page.locator("#lifecycle-state")).toHaveText("archived");
 });
+
+test("a scheduled-event timezone refusal explains the restriction and preserves unsaved edits", async ({ page }) => {
+  await mockIdentity(page);
+  let eventReads = 0;
+  let attemptedSave = false;
+  await page.route("**/api/v1/admin/events/event-0", async (route) => {
+    if (route.request().method() === "GET") {
+      eventReads += 1;
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(eventFixture()) });
+      return;
+    }
+    expect(route.request().method()).toBe("PATCH");
+    expect(route.request().postDataJSON()).toMatchObject({ name: "Unsaved organizer edit", time_zone: "UTC", version: 1 });
+    attemptedSave = true;
+    await route.fulfill({
+      status: 409,
+      headers: { "x-conflict-type": "event_timezone_has_agenda" },
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "conflict", message: "This event already has scheduled sessions. Changing its time zone is not supported safely yet. Keep the current time zone to save your other changes. Nothing was saved." } }),
+    });
+  });
+  await page.goto("/admin/events/event-0/settings");
+  await expect(page.getByLabel("Event name")).toHaveValue("AIEngineer Event 1");
+  const readsBeforeSave = eventReads;
+  await page.getByLabel("Event name").fill("Unsaved organizer edit");
+  await page.getByLabel("Time zone").selectOption("UTC");
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.locator("#editor-status")).toContainText("Keep the current time zone");
+  await expect(page.locator("#editor-status")).not.toContainText("Someone else saved");
+  await expect(page.getByLabel("Event name")).toHaveValue("Unsaved organizer edit");
+  await expect(page.getByLabel("Time zone")).toHaveValue("UTC");
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeEnabled();
+  expect(attemptedSave).toBe(true);
+  expect(eventReads).toBe(readsBeforeSave);
+});

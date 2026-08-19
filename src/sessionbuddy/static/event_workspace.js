@@ -4,7 +4,7 @@
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
   const byId = (id) => document.getElementById(id);
-  const state = { csrf: "", tokenMutation: null, embeds: [] };
+  const state = { csrf: "", tokenMutation: null, embeds: [], tracks: [] };
 
   function idempotencyKey() {
     const bytes = new Uint8Array(32);
@@ -44,17 +44,17 @@
     const encoded = encodeURIComponent(eventId);
     byId("publish-agenda").href = `/admin/events/${encoded}/agenda`;
     const publicUrl = `${location.origin}/events/${encoded}/${type === "itinerary" ? "schedule" : type}`;
-    const query = track ? `?track=${encodeURIComponent(track)}` : "";
+    const query = track ? `?track_id=${encodeURIComponent(track)}` : "";
     const embedUrl = `${location.origin}/embeds/events/${encoded}/${type}${query}`;
     const feedBase = `${location.origin}/api/v1/public/events/${encoded}/schedule`;
-    byId("embed-url").value = publicUrl;
-    byId("open-embed").href = publicUrl;
+    byId("embed-url").value = publicUrl + query;
+    byId("open-embed").href = publicUrl + query;
     const outputs = {
       iframe: `<iframe src="${embedUrl}" title="${title.replaceAll('"', '&quot;')}" loading="lazy" style="width:100%;min-height:${height}px;border:0"></iframe>${customCss ? `\n<style>${customCss}</style>` : ""}`,
       html: `<a href="${publicUrl}${query}">${title.replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</a>`,
-      json: feedBase,
-      xml: `${feedBase}.xml`,
-      ical: `${feedBase}.ics`,
+      json: feedBase + query,
+      xml: `${feedBase}.xml${query}`,
+      ical: `${feedBase}.ics${query}`,
     };
     byId("embed-code").value = outputs[output];
   }
@@ -72,7 +72,8 @@
       const row = document.createElement("article"); row.className = "item-row";
       const content = document.createElement("div");
       const title = document.createElement("strong"); title.textContent = preset.name;
-      const meta = document.createElement("p"); meta.className = "help"; meta.textContent = `${preset.type} · ${preset.output} · ${preset.enabled ? "enabled" : "disabled"}`;
+      const trackName = state.tracks.find((track) => track.id === preset.track_id)?.name || preset.track_name || preset.track || "All tracks";
+      const meta = document.createElement("p"); meta.className = "help"; meta.textContent = `${preset.type} · ${preset.output} · ${trackName} · ${preset.enabled ? "enabled" : "disabled"}`;
       content.append(title, meta);
       const remove = document.createElement("button"); remove.type = "button"; remove.className = "secondary"; remove.textContent = "Remove";
       remove.addEventListener("click", () => { state.embeds = state.embeds.filter((item) => item.id !== preset.id); saveRegistry(); renderRegistry(); });
@@ -81,6 +82,9 @@
   }
   byId("save-embed").addEventListener("click", () => {
     const preset = { id: crypto.randomUUID(), name: byId("embed-name").value.trim() || "Untitled preset", type: byId("embed-type").value, output: byId("embed-output").value, enabled: byId("embed-enabled").checked, track: byId("embed-track").value.trim(), custom_css: byId("embed-css").value.trim(), code: byId("embed-code").value };
+    preset.track_id = preset.track;
+    preset.track_name = state.tracks.find((track) => track.id === preset.track_id)?.name || "";
+    delete preset.track;
     state.embeds.unshift(preset); saveRegistry(); renderRegistry(); setStatus(`Saved “${preset.name}”.`);
   });
   async function initialize() {
@@ -106,6 +110,15 @@
       // do not depend on its payload and authorize every operation themselves,
       // so a transient read failure must not disable the whole page.
       if (Number(error?.status) === 401) throw error;
+    }
+    try {
+      const tracks = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda/tracks`);
+      state.tracks = tracks.data.filter((track) => track.status === "active");
+      for (const track of state.tracks) byId("embed-track").add(new Option(track.name, track.id));
+      renderRegistry();
+    } catch (_) {
+      byId("embed-track").disabled = true;
+      byId("embed-track-help").textContent = "Tracks could not be loaded. Refresh to choose a track; unfiltered sharing is still available.";
     }
     byId("generate-token").disabled = false;
     setStatus("Sharing and integration tools ready.");

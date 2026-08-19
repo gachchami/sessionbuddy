@@ -1402,6 +1402,17 @@
             ],
             "title": "Preview Url"
           },
+          "proposal_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Title"
+          },
           "scan_status": {
             "const": "clean",
             "default": "clean",
@@ -1411,6 +1422,39 @@
           "speaker_name": {
             "title": "Speaker Name",
             "type": "string"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Title"
           },
           "uploaded_at_ms": {
             "title": "Uploaded At Ms",
@@ -2531,6 +2575,17 @@
             ],
             "title": "Preview Url"
           },
+          "proposal_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Title"
+          },
           "scan_status": {
             "const": "clean",
             "default": "clean",
@@ -2540,6 +2595,39 @@
           "speaker_name": {
             "title": "Speaker Name",
             "type": "string"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Title"
           },
           "uploaded_at_ms": {
             "title": "Uploaded At Ms",
@@ -9229,6 +9317,16 @@
                 "type": "null"
               }
             ]
+          },
+          "track_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicTrackFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -9337,6 +9435,16 @@
             },
             "title": "Event",
             "type": "object"
+          },
+          "track_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicTrackFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -9344,6 +9452,42 @@
           "data"
         ],
         "title": "PublicSpeakerGallery",
+        "type": "object"
+      },
+      "PublicTrackFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "matched": {
+            "title": "Matched",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          }
+        },
+        "required": [
+          "matched"
+        ],
+        "title": "PublicTrackFilter",
         "type": "object"
       },
       "PublishedAgendaRevisionView": {

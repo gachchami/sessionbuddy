@@ -40,6 +40,7 @@ from sessionbuddy.platform.db.commands import (
 )
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
+from sessionbuddy.platform.public_track_filter import resolve_public_track_filter
 from sessionbuddy.platform.upload_contracts import task_form_schema_json
 
 from .models import (
@@ -2708,9 +2709,13 @@ async def get_public_schedule(
     )
     if event is None:
         raise HTTPException(status_code=404)
+    track_filter = await resolve_public_track_filter(
+        db, str(event["organization_id"]), event_id, request.query_params
+    )
     revision = await _revision(db, str(event["organization_id"]), event_id, "published")
     if revision is None:
         return PublicScheduleView(
+            track_filter=track_filter,
             event=PublicScheduleEventView(
                 id=str(event["id"]),
                 name=str(event["name"]),
@@ -2776,15 +2781,23 @@ async def get_public_schedule(
                LEFT JOIN event_tracks t ON t.id=ai.track_id
                LEFT JOIN submission_speakers ss ON ss.submission_id=ac.submission_id
                WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
+                 AND (?4=0 OR (?5 IS NOT NULL AND ai.track_id=?5))
                  AND /* public_session_content */
                GROUP BY ai.id ORDER BY ai.starts_at_ms,ai.id"""
             )
         )
-        .bind(event["organization_id"], event_id, revision["id"])
+        .bind(
+            event["organization_id"],
+            event_id,
+            revision["id"],
+            int(track_filter is not None),
+            track_filter.track_id if track_filter else None,
+        )
         .all()
     )
     await _attach_session_labels(db, str(event["organization_id"]), event_id, items)
     return PublicScheduleView(
+        track_filter=track_filter,
         event=PublicScheduleEventView(
             id=str(event["id"]),
             name=str(event["name"]),

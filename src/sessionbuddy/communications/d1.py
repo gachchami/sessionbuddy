@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from html import escape
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, Request
 
@@ -40,6 +41,33 @@ from .rendering import (
 )
 
 _INCOMPATIBLE_RECIPIENT_NAME_LIMIT = 10
+
+
+def _task_deadline(due_at_ms: int | None, zone: str) -> str:
+    if due_at_ms is None:
+        return "No deadline set."
+    try:
+        local_due = datetime.fromtimestamp(due_at_ms / 1000, ZoneInfo(zone))
+        formatted = local_due.strftime("%b %d, %Y at %H:%M")
+    except ZoneInfoNotFoundError:
+        # Workerd supplies ICU through JS Intl, but does not preload Python
+        # tzdata. Never silently relabel a UTC timestamp as event-local time.
+        from js import JSON, Date, Intl
+
+        options = JSON.parse(json.dumps({
+            "timeZone": zone, "year": "numeric", "month": "short", "day": "2-digit",
+            "hour": "2-digit", "minute": "2-digit", "hourCycle": "h23",
+        }))
+        formatter = Intl.DateTimeFormat.new("en-US", options)
+        parts = {str(part.type): str(part.value)
+                 for part in formatter.formatToParts(Date.new(due_at_ms))}
+        formatted = (
+            f"{parts['month']} {parts['day']}, {parts['year']} "
+            f"at {parts['hour']}:{parts['minute']}"
+        )
+    return f"Due: {formatted} ({zone})."
+
+
 _STATUS_CURSOR = SignedCursorContract(
     "communication_status", {"id": BOUNDED_ID, "ts": STRICT_INT}
 )
@@ -657,7 +685,8 @@ class D1CommunicationsService:
     ) -> ReminderQueuedResponse:
         row = row_mapping(
             await self.db.prepare(
-                """SELECT st.organization_id,st.id,st.title,e.name AS event_name,u.id AS user_id,
+                """SELECT st.organization_id,st.id,st.title,st.due_at_ms,e.time_zone,
+                      e.name AS event_name,u.id AS user_id,
                       u.email,COALESCE(p.display_name,u.email) AS display_name
                FROM speaker_tasks st JOIN event_speakers es ON es.organization_id=st.organization_id
                 AND es.event_id=st.event_id AND es.id=st.event_speaker_id
@@ -715,10 +744,15 @@ class D1CommunicationsService:
             await self._publish_delivery_requests([str(existing)])
             return ReminderQueuedResponse(message_id=str(existing))
         subject = f"Reminder: {escape(str(row['title']))}"
+        deadline = _task_deadline(
+            int(row["due_at_ms"]) if row["due_at_ms"] is not None else None,
+            str(row["time_zone"]),
+        )
         html_body = (
             f"<p>Hello {escape(str(row['display_name']))},</p>"
             f"<p>{escape(str(row['title']))} is still due for "
             f"{escape(str(row['event_name']))}.</p>"
+            f"<p>{escape(deadline)}</p>"
         )
         batch = CommandBatch(self.db)
         batch.begin_idempotency(record, now)

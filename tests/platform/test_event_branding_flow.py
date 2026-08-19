@@ -86,6 +86,7 @@ def branding_request(database: AsyncSqlite, bucket: Bucket, body: bytes = PNG) -
         {
             "type": "http",
             "method": "POST",
+            "query_string": b"",
             "path": "/api/v1/admin/organizations/org-a/event-assets/logo",
             "headers": [
                 (b"content-type", b"image/png"),
@@ -544,7 +545,7 @@ async def test_event_branding_matrix_is_consistent_across_public_views(
     assert public_schedule.event.cfp_url == f"/cfp/{created.id.replace('-', '')[:6]}/{slug}"
 
     public_gallery = await public_speakers(
-        created.id, branding_request(database, bucket, b"")
+        created.id, branding_request(database, bucket, b""), Response()
     )
     assert public_gallery.event["cfp_url"] == f"/cfp/{created.id.replace('-', '')[:6]}/{slug}"
     assert public_gallery.event["logo_url"] == expected["logo"]

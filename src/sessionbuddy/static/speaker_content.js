@@ -216,6 +216,8 @@
       owner.textContent = `${asset.speaker_name} · ${asset.kind.replaceAll("_", " ")}`;
       const meta = document.createElement("dl"); meta.className = "speaker-file-card__meta";
       [
+        ["Proposal", asset.proposal_title || "General speaker file"],
+        ...(asset.task_title ? [["Task", asset.task_title]] : []),
         ["Size", fileSize(asset.byte_size)],
         ["Uploaded", eventTime(asset.uploaded_at_ms)],
         ["Uploaded by", asset.uploaded_by],

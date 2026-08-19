@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from sessionbuddy.platform.public_track_filter import PublicTrackFilter
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -353,6 +355,7 @@ class PublicScheduleItemView(ScheduleItemView):
 
 
 class PublicScheduleView(StrictModel):
+    track_filter: PublicTrackFilter | None = None
     event: PublicScheduleEventView
     revision: ScheduleRevisionView | None
     items: list[PublicScheduleItemView]

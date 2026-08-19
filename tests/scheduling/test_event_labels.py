@@ -194,7 +194,8 @@ async def test_event_labels_are_owned_assignable_and_public(
         connection.commit()
         public = await client.get(f"/api/v1/public/events/{event_id}/schedule")
         assert public.status_code == 200, public.text
-        assert set(public.json()) == {"event", "revision", "items"}
+        assert set(public.json()) == {"event", "revision", "items", "track_filter"}
+        assert public.json()["track_filter"] is None
         assert set(public.json()["items"][0]) == {
             "id",
             "session_id",

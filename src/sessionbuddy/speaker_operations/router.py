@@ -91,7 +91,20 @@ from .models import (
 )
 from .scanner_adapter import SignedScannerAdapter
 
-SPEAKER_SESSION_PROJECTION_SQL = """SELECT ac.id,
+# CFP acceptance keeps membership in submission_speakers; direct sessions use
+# accepted_session_participants. Union their scoped identities, not copied rows.
+SPEAKER_SESSION_PROJECTION_SQL = """WITH participant AS (
+   SELECT organization_id,event_id,accepted_session_id,event_speaker_id
+   FROM accepted_session_participants
+   WHERE organization_id=?1 AND event_id=?2 AND event_speaker_id=?3
+   UNION
+   SELECT ss.organization_id,ss.event_id,session.id,ss.event_speaker_id
+   FROM submission_speakers ss
+   JOIN accepted_sessions session
+     ON session.organization_id=ss.organization_id AND session.event_id=ss.event_id
+    AND session.submission_id=ss.submission_id AND session.source_type='accepted_proposal'
+   WHERE ss.organization_id=?1 AND ss.event_id=?2 AND ss.event_speaker_id=?3
+   ) SELECT ac.id,
           CASE WHEN approved.id IS NOT NULL THEN approved.title
                ELSE COALESCE(ac.organizer_title,s.proposal_title) END AS title,
           CASE WHEN approved.id IS NOT NULL THEN approved.abstract ELSE NULL END AS abstract,
@@ -100,7 +113,7 @@ SPEAKER_SESSION_PROJECTION_SQL = """SELECT ac.id,
                ELSE COALESCE(ss.role,'speaker') END AS participant_role,
           ac.content_status,
           ai.starts_at_ms,ai.ends_at_ms,r.name AS room_name,t.name AS track_name
-   FROM accepted_session_participants participant
+   FROM participant
    JOIN accepted_sessions ac
      ON ac.organization_id=participant.organization_id
     AND ac.event_id=participant.event_id
@@ -1839,6 +1852,24 @@ async def create_speaker_asset_comment(
     )
 
 
+def _admin_asset_association_sql(sql: str) -> str:
+    """Resolve only stored associations, never other proposals by this speaker."""
+    return sql.replace(
+        "/* asset_association_columns */",
+        "proposal.id AS submission_id,proposal.proposal_title,"
+        "asset_task.id AS task_id,asset_task.title AS task_title",
+    ).replace(
+        "/* asset_association_join */",
+        """LEFT JOIN speaker_tasks asset_task ON asset_task.id=a.task_id
+             AND asset_task.organization_id=a.organization_id
+             AND asset_task.event_id=a.event_id
+             AND asset_task.event_speaker_id=a.event_speaker_id
+           LEFT JOIN submissions proposal
+             ON proposal.id=COALESCE(a.submission_id,asset_task.submission_id)
+             AND proposal.organization_id=a.organization_id AND proposal.event_id=a.event_id""",
+    )
+
+
 @speaker_operations_router.get(
     "/api/v1/admin/events/{event_id}/assets",
     response_model=AdminSpeakerAssetList,
@@ -1858,7 +1889,9 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
             request,
             _db(request)
             .prepare(
-                """SELECT a.id,a.event_speaker_id,p.display_name AS speaker_name,a.kind,
+                _admin_asset_association_sql("""SELECT a.id,a.event_speaker_id,
+                          p.display_name AS speaker_name,a.kind,
+                          /* asset_association_columns */,
                           current.original_filename,current.content_type,current.byte_size,
                           current.generation,current.uploaded_at_ms,current.version_comment,
                           COALESCE(u.email,'System') AS uploaded_by,0 AS profile_only,
@@ -1872,10 +1905,13 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                    JOIN speaker_asset_versions current ON current.asset_id=a.id
                      AND current.is_current=1 AND current.scan_state='clean'
                    LEFT JOIN users u ON u.id=current.uploaded_by_user_id
+                   /* asset_association_join */
                    WHERE a.organization_id=?1 AND a.event_id=?2
                    UNION ALL
                    SELECT 'profile-headshot:' || es.id AS id,es.id AS event_speaker_id,
                           p.display_name AS speaker_name,'headshot' AS kind,
+                          NULL AS submission_id,NULL AS proposal_title,
+                          NULL AS task_id,NULL AS task_title,
                           CASE h.content_type WHEN 'image/jpeg' THEN 'headshot.jpg'
                             WHEN 'image/webp' THEN 'headshot.webp'
                             ELSE 'headshot.png' END AS original_filename,
@@ -1890,7 +1926,7 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                    JOIN user_headshots h ON h.user_id=owner.id
                    WHERE es.organization_id=?1 AND es.event_id=?2
                      AND h.speaker_asset_version_id IS NULL
-                   ORDER BY uploaded_at_ms DESC,id LIMIT 500"""
+                   ORDER BY uploaded_at_ms DESC,id LIMIT 500""")
             )
             .bind(event["organization_id"], event_id),
         )
@@ -1905,6 +1941,10 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                 id=str(row["id"]),
                 event_speaker_id=str(row["event_speaker_id"]),
                 speaker_name=str(row["speaker_name"]),
+                submission_id=row["submission_id"],
+                proposal_title=row["proposal_title"],
+                task_id=row["task_id"],
+                task_title=row["task_title"],
                 kind=str(row["kind"]),
                 filename=str(row["original_filename"]),
                 content_type=str(row["content_type"]),
@@ -1959,7 +1999,9 @@ async def get_admin_asset_detail(event_id: str, asset_id: str, request: Request)
     asset_row = row_mapping(
         await _db(request)
         .prepare(
-            """SELECT a.id,a.event_speaker_id,p.display_name AS speaker_name,a.kind,
+            _admin_asset_association_sql("""SELECT a.id,a.event_speaker_id,
+                      p.display_name AS speaker_name,a.kind,
+                      /* asset_association_columns */,
                       current.original_filename,current.content_type,current.byte_size,
                       current.generation,current.uploaded_at_ms,current.version_comment,
                       COALESCE(u.email,'System') AS uploaded_by,
@@ -1973,7 +2015,8 @@ async def get_admin_asset_detail(event_id: str, asset_id: str, request: Request)
                JOIN speaker_asset_versions current ON current.asset_id=a.id
                  AND current.is_current=1 AND current.scan_state='clean'
                LEFT JOIN users u ON u.id=current.uploaded_by_user_id
-               WHERE a.organization_id=?1 AND a.event_id=?2 AND a.id=?3 LIMIT 1"""
+               /* asset_association_join */
+               WHERE a.organization_id=?1 AND a.event_id=?2 AND a.id=?3 LIMIT 1""")
         )
         .bind(event["organization_id"], event_id, asset_id)
         .first()
@@ -1989,6 +2032,10 @@ async def get_admin_asset_detail(event_id: str, asset_id: str, request: Request)
         id=asset_id,
         event_speaker_id=str(asset_row["event_speaker_id"]),
         speaker_name=str(asset_row["speaker_name"]),
+        submission_id=asset_row["submission_id"],
+        proposal_title=asset_row["proposal_title"],
+        task_id=asset_row["task_id"],
+        task_title=asset_row["task_title"],
         kind=str(asset_row["kind"]),
         filename=str(asset_row["original_filename"]),
         content_type=str(asset_row["content_type"]),

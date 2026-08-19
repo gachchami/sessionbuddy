@@ -563,6 +563,9 @@
         const scored = type.value === "score";
         weightLabel.hidden = !scored;
         weightLabel.querySelector("input").required = scored;
+        // Hiding a number input does not remove min/max validation. Disable it
+        // outside Score, retaining its draft value for a later switch back.
+        weightLabel.querySelector("input").disabled = !scored;
         optionsLabel.hidden = type.value !== "select";
         options.required = type.value === "select";
         // Before the input goes out of sight, and unconditionally: a choice-list message

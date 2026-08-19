@@ -4034,6 +4034,10 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
                archived_at_ms=?15,draft_starts_at_ms=?16,draft_ends_at_ms=?17,
                draft_delivery_mode=?18,version=version+1,updated_at_ms=?19
                WHERE id=?20 AND version=?21
+                 AND (time_zone=?4 OR NOT EXISTS (
+                   SELECT 1 FROM agenda_items ai
+                   WHERE ai.organization_id=events.organization_id AND ai.event_id=events.id
+                 ))
                RETURNING id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                          delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
                          email_sender_name,email_reply_to,status,version,draft_starts_at_ms,
@@ -4065,6 +4069,24 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
         .first()
     )
     if row is None:
+        # Keep this guard in the UPDATE, not only in a preflight read: an agenda
+        # item may be inserted concurrently. Published revisions are immutable;
+        # a plain event edit must never silently reinterpret their local times.
+        blocked = await db.prepare(
+            """SELECT 1 FROM events e WHERE e.id=?1 AND e.time_zone<>?2
+               AND EXISTS (SELECT 1 FROM agenda_items ai
+                 WHERE ai.organization_id=e.organization_id AND ai.event_id=e.id)"""
+        ).bind(event_id, body.time_zone).first()
+        if blocked is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This event already has scheduled sessions. Changing its time zone "
+                    "is not supported safely yet. Keep the current time zone to save "
+                    "your other changes. Nothing was saved."
+                ),
+                headers={"x-conflict-type": "event_timezone_has_agenda"},
+            )
         raise HTTPException(status_code=409)
     audit = CommandBatch(db)
     audit.audit(

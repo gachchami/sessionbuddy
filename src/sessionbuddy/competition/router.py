@@ -28,6 +28,7 @@ from sessionbuddy.platform.db.d1 import (
     to_python,
 )
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
+from sessionbuddy.platform.public_track_filter import resolve_public_track_filter
 from sessionbuddy.platform.upload_contracts import task_form_schema, task_form_schema_json
 from sessionbuddy.speaker_operations.acceptance_tasks import (
     SPEAKER_TASK_FLAGS_SQL,
@@ -2273,7 +2274,10 @@ async def sessionboard_compatible_speakers(
     response_model=PublicSpeakerGallery,
     tags=["public-program"],
 )
-async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGallery:
+async def public_speakers(
+    event_id: str, request: Request, response: Response
+) -> PublicSpeakerGallery:
+    response.headers["Cache-Control"] = "no-store"
     event = row_mapping(
         await _db(request)
         .prepare(
@@ -2316,6 +2320,9 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
         .bind(event["organization_id"], event_id)
         .all()
     )
+    track_filter = await resolve_public_track_filter(
+        _db(request), str(event["organization_id"]), event_id, request.query_params
+    )
     data = []
     for row in rows:
         sessions = result_rows(
@@ -2338,12 +2345,22 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
                        WHERE participant.accepted_session_id=ac.id
                          AND participant.event_speaker_id=?1))
                      AND sr.status='published'
+                     AND ac.organization_id=?2 AND ac.event_id=?3
+                     AND (?4=0 OR (?5 IS NOT NULL AND ai.track_id=?5))
                    ORDER BY ai.starts_at_ms,s.proposal_title"""
                 )
             )
-            .bind(row["id"])
+            .bind(
+                row["id"],
+                event["organization_id"],
+                event_id,
+                int(track_filter is not None),
+                track_filter.track_id if track_filter else None,
+            )
             .all()
         )
+        if track_filter is not None and not sessions:
+            continue
         data.append(
             PublicSpeaker(
                 id=str(row["id"]),
@@ -2372,6 +2389,7 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
             )
         )
     return PublicSpeakerGallery(
+        track_filter=track_filter,
         event={
             "id": event_id,
             "name": str(event["name"]),

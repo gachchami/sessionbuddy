@@ -120,15 +120,35 @@
   function currentView() {
     return document.querySelector('input[name="view"]:checked').value;
   }
+  function eventDays() {
+    const { starts_at_ms: start, ends_at_ms: end } = state.model.event;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return [];
+    try {
+      // Enumerate calendar dates, not 24-hour steps through local instants:
+      // daylight-saving transitions can make an event day 23 or 25 hours.
+      const first = Date.parse(`${eventDate(start)}T00:00:00Z`);
+      const last = Date.parse(`${eventDate(end)}T00:00:00Z`);
+      const count = (last - first) / 86400000 + 1;
+      // A corrupt or unusually long range must not create an unbounded board.
+      // Existing scheduled days are always added independently below.
+      if (!Number.isInteger(count) || count < 1 || count > 366) return [];
+      return Array.from({ length: count }, (_, index) =>
+        new Date(first + index * 86400000).toISOString().slice(0, 10)
+      );
+    } catch (_) {
+      return [];
+    }
+  }
+  function dayLabel(date) {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: "UTC", weekday: "long", month: "short", day: "numeric",
+    }).format(new Date(`${date}T00:00:00Z`));
+  }
   function groupKey(item, view) {
     if (view === "room") return item.room_name || "Unassigned room";
     if (view === "track") return item.track_name || "No track";
     if (view === "day") {
-      return format(item.start_at_ms, {
-        weekday: "long",
-        month: "short",
-        day: "numeric",
-      });
+      return eventDate(item.start_at_ms);
     }
     if (view === "week") {
       const date = new Date(item.start_at_ms);
@@ -372,6 +392,7 @@
       unscheduled.append(card(item, false))
     );
     const groups = new Map();
+    if (view === "day") eventDays().forEach((day) => groups.set(day, []));
     model.items.forEach((item) => {
       const name = groupKey(item, view);
       if (!groups.has(name)) groups.set(name, []);
@@ -379,7 +400,7 @@
     });
     const board = byId("board");
     board.replaceChildren();
-    byId("empty").hidden = model.items.length !== 0;
+    byId("empty").hidden = model.items.length !== 0 || groups.size !== 0;
     byId("empty").querySelector("p").textContent = model.unscheduled_sessions.length
       ? "Add an accepted session from the unscheduled list."
       : "Accepted proposals and organizer-created sessions will appear here.";
@@ -387,8 +408,9 @@
       ([name, items]) => {
         const section = make("section", undefined, "agenda-group");
         section.dataset.group = name;
-        section.append(make("h3", name));
+        section.append(make("h3", view === "day" ? dayLabel(name) : name));
         const list = make("ul", undefined, "agenda-group-list");
+        if (!items.length) list.append(make("li", "No sessions scheduled for this day.", "empty"));
         items.sort((a, b) => a.start_at_ms - b.start_at_ms).forEach((item) =>
           list.append(card(item))
         );

@@ -303,6 +303,10 @@ class AdminSpeakerAssetView(BaseModel):
     id: str
     event_speaker_id: str
     speaker_name: str
+    submission_id: str | None = None
+    proposal_title: str | None = None
+    task_id: str | None = None
+    task_title: str | None = None
     kind: Literal["headshot", "slides", "supporting_document"]
     filename: str
     content_type: str

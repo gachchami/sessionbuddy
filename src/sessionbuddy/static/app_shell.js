@@ -1,12 +1,22 @@
 (() => {
   "use strict";
 
+  const eventDateCopy = (value, timeZone) => {
+    if (value === null || value === undefined || value === "" || !timeZone) return "";
+    const date = new Date(Number(value));
+    if (!Number.isFinite(date.getTime())) return "";
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        timeZone, day: "numeric", month: "short", year: "numeric",
+      }).format(date);
+    } catch (_) {
+      // An unknown event zone must not silently become the viewer's zone.
+      return "";
+    }
+  };
   const cfpStateCopy = (call) => {
     const labels = { scheduled: "Scheduled", open: "Open", closed: "Closed" };
-    const boundaryDate = new Date(Number(call.cfp_boundary_at_ms));
-    const boundary = call.cfp_boundary_at_ms && Number.isFinite(boundaryDate.getTime())
-      ? new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(boundaryDate)
-      : "";
+    const boundary = eventDateCopy(call.cfp_boundary_at_ms, call.time_zone);
     if (call.cfp_boundary_kind === "opens" && boundary) return `Opens ${boundary}`;
     if (call.cfp_boundary_kind === "closes" && boundary) {
       return call.cfp_state === "closed" ? `Closed ${boundary}` : `Closes ${boundary}`;
@@ -824,11 +834,9 @@
         const startsAt = new Date(Number(event.starts_at_ms));
         const hasDateValue = event.starts_at_ms !== null && event.starts_at_ms !== undefined && event.starts_at_ms !== "";
         const hasValidDate = hasDateValue && Number.isFinite(startsAt.getTime());
-        const date = make("time", hasValidDate ? new Intl.DateTimeFormat(undefined, {
-          month: "short",
-          day: "numeric",
-          year: "numeric"
-        }).format(startsAt) : "Date to be announced");
+        const date = make("time", hasValidDate
+          ? eventDateCopy(event.starts_at_ms, event.time_zone) || "Date unavailable"
+          : "Date to be announced");
         if (hasValidDate) date.dateTime = startsAt.toISOString();
         card.append(date, make("h3", String(event.name || "Untitled event")));
         const deliveryMode = typeof event.delivery_mode === "string" ? event.delivery_mode.replaceAll("_", " ") : "";

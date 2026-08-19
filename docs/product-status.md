@@ -100,6 +100,12 @@ schema includes optional speaker biography and reviewer-only notes, and the buil
 links directly to the event's Agenda track configuration rather than implying that
 tracks are configured in a separate product.
 
+Changing an event's time zone after any agenda items exist is rejected without
+saving other changes. This protects immutable published revisions from silent
+time shifts; a previewed, atomic wall-clock-preserving conversion workflow is
+not yet implemented. Same-zone edits and time-zone changes before scheduling
+remain supported.
+
 The published CFP page shows the proposal form to a visitor who is not signed
 in. Every field, its conditional display, and its client validation already
 travel in the public `GET /api/v1/forms/{slug}` payload, so a speaker can read
@@ -151,6 +157,12 @@ view/edit/manage grants; organization owners and managers administer every
 event in that organization.
 
 ## Evaluation
+
+Round creation and current-round responses include persisted review-window dates,
+so a newly saved round displays the same dates before and after reloading.
+Switching a scorecard criterion away from Score excludes its hidden weight from
+browser validation while retaining the unsaved value for switching back. Non-Score
+responses submit a null weight, including when the previous numeric value was zero.
 
 Implemented: evaluation rounds, balanced assignments, blind review, conflict
 declaration and reassignment, immutable final decisions, results, and audit
@@ -245,6 +257,13 @@ same accessible Show more/Show less disclosure in the speaker dialog and public
 person profile, and the dialog is bounded, labelled, and returns focus to its
 opener when closed. Explicit given/family-name data remains a future profile-model
 improvement; no derived surname field has been added to the API.
+Public session cards include description previews with inline Show more/Show less.
+Expansion remains intact when a session is added to the itinerary; the separate
+detail dialog still provides complete session information.
+Embed presets select event-scoped track IDs and preserve `track_id` in iframe,
+HTML-link, JSON, XML and iCal outputs. Unknown, archived or foreign-event IDs
+return no sessions or speakers; JSON identifies unmatched filters and public
+speaker responses are not cached. Saved preset rows include the selected track.
 The multi-event speaker portal adds compact accent and logo/monogram identity to
 each event without loading cover imagery; portfolios above eight memberships
 defer inactive event detail until the speaker expands it. The speaker portal's
@@ -252,8 +271,10 @@ event response therefore exposes additive nullable `accent_color` and `logo_url`
 fields; it does not perform a public branding fetch per membership.
 The portal projects active accepted sessions from program participation as well
 as CFP history. Organizer-created sessions appear independently; proposal-backed
-sessions enrich their existing proposal row. Speakers see only approved session
-content and slots from the latest published schedule, never organizer working
+sessions enrich their existing proposal row. CFP session membership is resolved
+from submission-speaker links without requiring a duplicate organizer-session
+participant record. Speakers see only approved session content and slots from
+the latest published schedule, never organizer working
 copy or an unpublished agenda. When newer content is still in draft, the portal
 keeps the last approved copy visible while truthfully marking the content as
 being finalised.
@@ -273,9 +294,16 @@ event-scoped updates separately from account authentication history, with messag
 categories, safe expandable content, browser-local read state, and bounded history
 expansion. Organizer message history excludes authentication mail and provides
 responsive category/status filtering with expandable delivery detail. Organizers
-can bulk-remind the currently visible active-speaker tasks, inspect clean file
+can bulk-remind the currently visible active-speaker tasks and send task
+reminders with the due date in the event time zone (or an
+explicit no-deadline message). Submission confirmation emails identify the event
+while preserving organizer-authored confirmation copy. Organizers can inspect file
 versions, record immutable version-scoped comments and replies, and export selected
-clean deliverables as a private audited ZIP. Session content history preserves
+clean deliverables as a private audited ZIP. The organizer file library displays
+stored proposal and task associations; files without
+a proposal association are explicitly marked as general speaker files. Associations
+are never inferred from other sessions belonging to the same speaker.
+Session content history preserves
 versions whose original editor identity is no longer resolvable and exposes their
 saved title, abstract, status, event-local timestamp, and restore action. A scheduled communication dispatcher
 republishes stuck queued messages, retries transient provider failures, and
@@ -292,6 +320,11 @@ publication, branded list/day/week/track/room schedule views, a browser-local
 attendee itinerary, embeddable public schedule and speaker views, versioned
 calendar invitations, and a read-only Sessionboard-compatible feed for pulling
 accepted speakers and sessions into Accelevents.
+
+The organizer Day view orders event-local dates chronologically and includes
+empty event days, including across daylight-saving and year boundaries. Empty
+day generation is bounded to valid ranges of at most 366 days; existing scheduled
+days remain visible even outside that range.
 
 Accepted-session handoff preserves the proposal's routed track when it matches
 an active agenda track and exposes the primary and co-speaker names in the
@@ -327,6 +360,21 @@ the first agenda publication after this change can therefore emit one schedule-c
 refresh for previously delivered invitations before subsequent unchanged publishes settle.
 
 ## Release readiness
+
+The self-contained UAT pack in `uat/sessionboard/` preserves the external eval
+snapshot as provenance, with a separate repository-owned execution overlay.
+Its compiler retains every source step and rubric while adding mapped personas,
+explicit invitation acceptance, dependency handoffs, canonical event binding,
+relative dates and SessionBuddy-specific acceptance checks. Offline validation
+requires exact result IDs, evidenced failures/blocks and separate manual verdicts.
+The execution overlay includes post-publication time-zone invariants, every embed
+output and unmatched-track evidence, zero-weight/Free-text scorecard regressions,
+relative task deadlines, and explicit reuse of the existing speaker identity.
+Conditional ABS-14 absence requires consistent evidenced verdicts; secondary
+reviewer/attendee accounts require explicit provisioning before use. Credential
+screening includes common secret-bearing values but does not replace redaction.
+These checks establish packet integrity, not a product UAT pass; no external kit
+checkout or model provider is required to build or validate the packet.
 
 Implemented and verified: fail-closed production configuration, accessibility
 coverage, large-dataset seeding, database backup/restore checks, desktop and
@@ -853,6 +901,9 @@ resolver table used by the distributor.
 
 ## Public event surfaces
 
+- Public discovery cards format event dates and CFP opening/closing dates in
+  the event time zone, not the viewer's zone. Unknown zones omit the boundary
+  date rather than inventing a local date.
 - CFP, schedule, speaker gallery, and event-preview headers use one shared
   masthead renderer. Cover images retain the requested 8:3 ratio everywhere;
   CFP remains a focused submission task without schedule or speaker tabs. The

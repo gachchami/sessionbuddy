@@ -172,6 +172,7 @@
     } catch (error) {
       if (error.status === 401) { preserveDraft(); window.SessionBuddyApi.redirectIfSignedOut(error); return null; }
       if (error.status === 403 || (error.status === 404 && state.mode === "edit")) { setReadOnly(); return null; }
+      if (error.status === 409 && error.code === "event_timezone_has_agenda_conflict") { setStatus(window.SessionBuddyApi.message(error), true, true); return null; }
       if (error.status === 409 && state.mode === "edit") { setStatus("Someone else saved this event while you were editing.", true); try { await reconcile(); } catch (reloadError) { setStatus(window.SessionBuddyApi.message(reloadError), true, true); } return null; }
       if (error.status === 409 && state.mode === "duplicate") { setStatus("The source event changed. Reload to clone its latest version.", true, true); byId("reload-source").hidden = false; return null; }
       if (error.status === 409) { setStatus("Event creation is still being processed. Try again to safely check the same request.", true, true); return null; }

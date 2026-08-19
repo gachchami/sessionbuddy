@@ -11,6 +11,7 @@ from pydantic import (
     model_validator,
 )
 
+from sessionbuddy.platform.public_track_filter import PublicTrackFilter
 from sessionbuddy.platform.upload_contracts import FILE_TASK_TYPES, MAX_ASSET_UPLOAD_BYTES
 
 
@@ -323,6 +324,7 @@ class PublicSpeaker(BaseModel):
 
 
 class PublicSpeakerGallery(BaseModel):
+    track_filter: PublicTrackFilter | None = None
     event: dict[str, str | None]
     data: list[PublicSpeaker]
 

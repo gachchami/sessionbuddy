@@ -1859,16 +1859,9 @@ async def create_evaluation_round(
     )
     await _execute_round_write(request, batch, db, organization_id, event_id, body.name)
     await publish_committed_messages(request, notification_ids)
-    return EvaluationRoundView(
-        id=round_id,
-        event_id=event_id,
-        name=body.name,
-        status=body.status,
-        # A new round starts the version contract at 1; every editor reads it here.
-        version=1,
-        assignment_count=len(assignment_pairs),
-        evaluator_count=len(body.evaluator_user_ids),
-    )
+    # Return the persisted projection, as replay and later mutations do: the
+    # organizer renders this response immediately, including its review dates.
+    return await _round_view(db, round_id)
 
 
 @evaluation_router.get(
@@ -1891,6 +1884,7 @@ async def get_current_evaluation_round(
     row = row_mapping(
         await db.prepare(
             """SELECT r.id, r.event_id, r.name, r.status, r.version,
+                  r.review_opens_at_ms, r.review_closes_at_ms,
                   (SELECT COUNT(*) FROM evaluation_assignments a
                     WHERE a.round_id=r.id AND a.status!='revoked') AS assignment_count,
                   (SELECT COUNT(*) FROM evaluation_round_evaluators e

@@ -8,6 +8,7 @@
   const sessionsOnly = location.pathname.endsWith("/sessions");
   const storageKey = `sessionbuddy:itinerary:${eventId}`;
   const state = { model: null, view: "list", query: "", track: "", format: "", room: "", day: "", itinerary: new Set(), selected: null };
+  const expandedDescriptions = new Set();
   try { state.itinerary = new Set(JSON.parse(localStorage.getItem(storageKey) || "[]")); } catch (_) { state.itinerary = new Set(); }
   const byId = (id) => document.getElementById(id);
   const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
@@ -98,6 +99,29 @@
     const classification = make("p", undefined, "session-classification");
     classification.append(make("span", item.format_name, "session-format-name"), trackChip(item));
     details.append(classification, make("h3", item.title));
+    const description = String(item.description || "");
+    if (description) {
+      const preview = make("p", undefined, "session-description");
+      preview.id = `session-description-${item.id}`;
+      const long = description.length > 220;
+      const toggle = make("button", "Show more", "secondary");
+      toggle.type = "button";
+      toggle.setAttribute("aria-controls", preview.id);
+      const updateDescription = () => {
+        const expanded = expandedDescriptions.has(item.id);
+        preview.textContent = long && !expanded ? `${description.slice(0, 220).trimEnd()}…` : description;
+        toggle.textContent = expanded ? "Show less" : "Show more";
+        toggle.setAttribute("aria-expanded", String(expanded));
+      };
+      toggle.addEventListener("click", () => {
+        if (expandedDescriptions.has(item.id)) expandedDescriptions.delete(item.id);
+        else expandedDescriptions.add(item.id);
+        updateDescription();
+      });
+      updateDescription();
+      details.append(preview);
+      if (long) details.append(toggle);
+    }
     const speaker = make("p", item.speaker_names || "Speaker TBA", "session-speaker");
     if (item.speaker_details) speaker.append(make("small", item.speaker_details));
     details.append(speaker, make("p", item.room_name, "session-room"), labelChips(item));
@@ -179,9 +203,10 @@
     if (!eventId) throw new Error("Invalid schedule link");
     let body;
     try {
-      body = await window.SessionBuddyApi.request(`/api/v1/public/events/${encodeURIComponent(eventId)}/schedule`);
+      body = await window.SessionBuddyApi.request(`/api/v1/public/events/${encodeURIComponent(eventId)}/schedule${location.search}`);
     } catch (error) {
-      if (![401, 403].includes(error.status)) throw error;
+      const filters = new URLSearchParams(location.search);
+      if (![401, 403].includes(error.status) || filters.has("track_id") || filters.has("track")) throw error;
       body = await window.SessionBuddyApi.request(`/api/v1/events/${encodeURIComponent(eventId)}/schedule`);
     }
     state.model = body; document.body.classList.toggle("embedded", embedded);
@@ -220,10 +245,6 @@
     const requestedParams = new URLSearchParams(location.search);
     const requestedSearch = requestedParams.get("search") || "";
     if (requestedSearch) { state.query = requestedSearch.trim().toLowerCase(); byId("schedule-search").value = requestedSearch; render(); }
-    const requestedTrack = requestedParams.get("track") || "";
-    if (requestedTrack && [...byId("track-filter").options].some((option) => option.value === requestedTrack)) {
-      state.track = requestedTrack; byId("track-filter").value = requestedTrack; render();
-    }
   }
   load().catch((error) => { byId("status").textContent = window.SessionBuddyApi.message(error, "The schedule is unavailable. Try again."); byId("status").classList.add("error"); });
 })();
