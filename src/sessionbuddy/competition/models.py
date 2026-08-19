@@ -277,10 +277,7 @@ class SpeakerTaskCreate(BaseModel):
         if file_task and self.fields:
             raise ValueError("file request tasks cannot define response fields")
         if any(
-            not value
-            or len(value) > 150
-            or "/" not in value
-            or value.lower() != value
+            not value or len(value) > 150 or "/" not in value or value.lower() != value
             for value in self.allowed_content_types
         ):
             raise ValueError("allowed content types must be lowercase MIME types")

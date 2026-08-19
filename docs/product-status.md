@@ -387,6 +387,20 @@ screening includes common secret-bearing values but does not replace redaction.
 These checks establish packet integrity, not a product UAT pass; no external kit
 checkout or model provider is required to build or validate the packet.
 
+Release-gate success and UAT acceptance are separate decisions. The local UAT
+assessment retains failures for unsupported capabilities and blocks for missing
+evidence; passing packet validation must not be presented as all-green product
+acceptance. Authorized fixture extensions can verify active incomplete speakers,
+proposal-linked deliverables, latest-version exports, and invitation acceptance
+without rewriting the original observations or accepting deliberately pending
+speakers. Local email delivery does not establish external-inbox delivery, and a
+fresh API export is distinguished from inspecting the browser's downloaded file.
+
+Remaining capability gaps include CRM pipeline enrollment, automatic creation of
+speaker reminder schedules, post-scheduling time-zone preview/apply, and an
+organizer track-renaming control. Release smoke tests do not waive these gaps or
+the separate manual checks for external delivery and calendar import.
+
 Implemented and verified: fail-closed production configuration, accessibility
 coverage, large-dataset seeding, database backup/restore checks, desktop and
 mobile browser form/flow tests (including rejected invalid writes), API benchmarks,
