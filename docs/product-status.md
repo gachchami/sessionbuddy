@@ -374,8 +374,11 @@ requires exact result IDs, evidenced failures/blocks and separate manual verdict
 The execution overlay includes post-publication time-zone invariants, every embed
 output and unmatched-track evidence, zero-weight/Free-text scorecard regressions,
 relative task deadlines, and explicit reuse of the existing speaker identity.
-Conditional ABS-14 absence requires consistent evidenced verdicts; secondary
-reviewer/attendee accounts require explicit provisioning before use. Credential
+Conditional ABS-14 absence requires consistent evidenced verdicts. The explicit
+SPK-07 and CFP-18 manual fallbacks may be marked not applicable only with evidence
+that their source conditions are false; their automatic checks still require a
+verdict. Other required manual checks cannot be waived by their testability label.
+Secondary reviewer/attendee accounts require explicit provisioning before use. Credential
 screening includes common secret-bearing values but does not replace redaction.
 These checks establish packet integrity, not a product UAT pass; no external kit
 checkout or model provider is required to build or validate the packet.

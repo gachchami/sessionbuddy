@@ -397,7 +397,10 @@ def validate(report: dict, *, final: bool = False) -> None:
             if needed:
                 if not isinstance(item.get(kind), dict):
                     raise ValueError(f"Missing {kind} verdict: {expected['id']}")
-                allow_na = conditional or (kind == "manual" and expected["testability"] == "auto")
+                allow_na = conditional or (
+                    kind == "manual"
+                    and expected["id"] in plan["policy"]["conditional_manual_rubrics"]
+                )
                 check_outcome(item[kind], final=final, allow_na=allow_na)
                 parts.append(item[kind]["status"])
             elif item.get(kind) is not None:

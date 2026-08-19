@@ -299,6 +299,46 @@ def test_conditional_abs14_absence_requires_consistent_evidenced_verdicts() -> N
         uat.validate(other, final=True)
 
 
+@pytest.mark.parametrize("rubric_id", ["SPK-07", "CFP-18"])
+def test_conditional_manual_fallback_can_be_inapplicable_after_automatic_pass(rubric_id) -> None:
+    report = complete_report()
+    rubric = next(r for r in report["rubric_results"] if r["rubric_id"] == rubric_id)
+    rubric["manual"].update(
+        status="not_applicable",
+        notes="Automatic execution verified the surface; manual fallback condition is false.",
+        evidence=["automatic-surface-verification.png"],
+    )
+    uat.validate(report, final=True)
+    rubric["status"] = "not_applicable"
+    with pytest.raises(ValueError, match="explicitly conditional"):
+        uat.validate(report, final=True)
+
+
+@pytest.mark.parametrize("field,value", [("evidence", []), ("notes", " ")])
+def test_conditional_manual_absence_requires_evidence_and_observations(field, value) -> None:
+    report = complete_report()
+    rubric = next(r for r in report["rubric_results"] if r["rubric_id"] == "SPK-07")
+    rubric["manual"].update(status="not_applicable")
+    rubric["manual"][field] = value
+    with pytest.raises(ValueError, match="requires evidence and observations"):
+        uat.validate(report, final=True)
+
+
+@pytest.mark.parametrize("testability", ["auto-partial", "auto"])
+def test_required_manual_verdict_cannot_be_waived_by_testability(monkeypatch, testability) -> None:
+    report = complete_report()
+    plan, template = uat.build()
+    expected = next(r for r in plan["rubric"] if r["id"] == "CFP-08")
+    assert expected["manual_required"]
+    expected["testability"] = testability
+    monkeypatch.setattr(uat, "build", lambda: (plan, template))
+    rubric = next(r for r in report["rubric_results"] if r["rubric_id"] == "CFP-08")
+    rubric["automatic"] = passed()
+    rubric["manual"].update(status="not_applicable")
+    with pytest.raises(ValueError, match="explicitly conditional"):
+        uat.validate(report, final=True)
+
+
 @pytest.mark.parametrize("content", [
     "password: synthetic", "Authorization: Bearer synthetic",
     "https://example.test/login?token=synthetic",

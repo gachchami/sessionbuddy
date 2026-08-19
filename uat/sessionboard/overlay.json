@@ -1,8 +1,12 @@
 {
-  "version": 3,
+  "version": 4,
   "default_precondition": "Before any step, verify the mapped starting account (or explicitly required anonymous context), canonical organization/event binding if already created, and each upstream handoff. Record observed state and safe evidence in precondition; no special before instruction does not mean no preflight. Missing prerequisites block execution.",
   "conditional_rubrics": {
     "ABS-14": "Not applicable only after inspecting available UI and product claims and recording evidence that AI review/triage is not claimed. An advertised but absent or broken feature fails; an inaccessible surface blocks. Record the absence in overall, automatic and manual verdicts."
+  },
+  "conditional_manual_rubrics": {
+    "SPK-07": "Only the manual fallback may be not_applicable when evidence shows the agent reached and verified the speaker-scoped portal. The source manual instructions apply only when emailed-link access prevented the agent from reaching it. The overall and automatic verdicts remain required.",
+    "CFP-18": "Only the manual fallback may be not_applicable when evidence shows the agent created the second event and checked event isolation. The source manual instructions apply only when the agent could not create a second event despite multi-event support. The overall and automatic verdicts remain required."
   },
   "authority": "SessionBuddy UAT execution policy; supersedes conflicting snapshot instructions only where explicitly stated",
   "identity_policy": {
