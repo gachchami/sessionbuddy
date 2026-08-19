@@ -31,7 +31,7 @@ const speakers = [
   biography: speaker.id === "5" ? longBiography : "A concise speaker biography.",
   location: "",
   links: [],
-  headshot_url: null,
+  headshot_url: null as string | null,
   sessions: [{
     id: `session-${speaker.id}`,
     title: `Session by ${speaker.display_name}`,
@@ -41,7 +41,7 @@ const speakers = [
   }],
 }));
 
-async function mount(page: Page, path: string) {
+async function mount(page: Page, path: string, entries = speakers) {
   await page.route(
     (url) => url.pathname === path,
     (route) => route.fulfill({ contentType: "text/html", body: speakerGalleryHtml }),
@@ -69,11 +69,11 @@ async function mount(page: Page, path: string) {
           cover_image_url: null,
           website_url: "https://example.test",
         },
-        data: speakers,
+        data: entries,
       }),
     }));
   await page.goto(path);
-  await expect(page.getByRole("status")).toContainText(`${speakers.length} speakers`);
+  await expect(page.getByRole("status")).toContainText(`${entries.length} speakers`);
 }
 
 test.describe("public speaker surfaces", () => {
@@ -124,4 +124,54 @@ test.describe("public speaker surfaces", () => {
     await expect(page.locator(".public-header")).toBeHidden();
     await expect(page.locator(".speaker-card")).toHaveCount(speakers.length);
   });
+
+  for (const surface of ["speakers", "gallery"]) {
+    test(`${surface} keeps mixed portraits, surname order and profiles correct after search`, async ({ page }) => {
+      const entries = ["Aaron Zulu", "Sasha Speaker", "Zoe Adams"].map((name, index) => ({
+        ...speakers[0],
+        id: `mixed-${index}`,
+        display_name: name,
+        headshot_url: name === "Zoe Adams" ? "/test-headshot.png" : null,
+      }));
+      await page.route("**/test-headshot.png", (route) => route.fulfill({
+        contentType: "image/png",
+        body: readFileSync(resolve(__dirname, "../../uat/sessionboard/fixtures/headshot.png")),
+      }));
+      await mount(page, `/events/${eventId}/${surface}`, entries);
+      const cards = page.locator(".speaker-card");
+      const expectedNames = ["Zoe Adams", "Sasha Speaker", "Aaron Zulu"];
+      await expect(cards.locator("h2")).toHaveText(expectedNames);
+      const photo = cards.first().locator(".speaker-card__media img");
+      await expect(photo).toBeVisible();
+      await expect.poll(() => photo.evaluate((image: HTMLImageElement) =>
+        image.complete && image.naturalWidth > 0)).toBe(true);
+      await expect(cards.nth(1).locator(".speaker-initials")).toHaveText("SS");
+      await expect(cards.nth(2).locator(".speaker-initials")).toHaveText("AZ");
+      await expect(cards.nth(1).locator("img")).toHaveCount(0);
+      await expect(cards.nth(2).locator("img")).toHaveCount(0);
+
+      const search = page.getByLabel("Find a speaker");
+      await search.fill("Sasha");
+      await expect(cards.locator("h2")).toHaveText(["Sasha Speaker"]);
+      await search.fill("");
+      await expect(cards.locator("h2")).toHaveText(expectedNames);
+      for (const name of expectedNames) {
+        const card = cards.filter({ has: page.getByRole("heading", { name, exact: true }) });
+        const opener = card.getByRole("button", { name: "View profile" });
+        await opener.click();
+        const dialog = page.getByRole("dialog", { name, exact: true });
+        await expect(dialog).toBeVisible();
+        if (name === "Zoe Adams") {
+          await expect(dialog.locator("img")).toHaveAttribute("src", "/test-headshot.png");
+        } else {
+          await expect(dialog.locator(".speaker-initials")).toHaveText(
+            name === "Sasha Speaker" ? "SS" : "AZ",
+          );
+        }
+        await dialog.getByRole("button", { name: "Close speaker profile" }).click();
+        await expect(dialog).not.toBeVisible();
+        await expect(opener).toBeFocused();
+      }
+    });
+  }
 });
