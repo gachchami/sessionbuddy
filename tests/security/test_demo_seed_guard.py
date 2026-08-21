@@ -1,6 +1,8 @@
 """The demo seed and the release preflight must both refuse production."""
 
 import importlib.util
+import json
+import stat
 import sys
 from pathlib import Path
 
@@ -96,6 +98,8 @@ def test_preflight_passes_when_demo_login_is_absent() -> None:
 
 def test_seed_identifiers_are_deterministic() -> None:
     assert seed.ORGANIZER_USER_ID == seed.stable_id("user:demo-organizer")
+    assert seed.REVIEWER_USER_ID == seed.stable_id("user:demo-reviewer")
+    assert seed.SPEAKER_USER_ID == seed.stable_id("user:demo-speaker")
     assert seed.ORGANIZER_USER_ID != seed.ORGANIZER_GRANT_ID
 
 
@@ -105,6 +109,129 @@ def test_seed_statements_are_idempotent_upserts() -> None:
     assert inserts, "the seed must insert the demo organizer"
     for statement in inserts:
         assert "ON CONFLICT" in statement, f"not idempotent: {statement[:60]}"
+    password_index = next(
+        i for i, statement in enumerate(statements) if "password_credentials" in statement
+    )
+    bump_index = next(
+        i for i, statement in enumerate(statements) if "authorization_version+1" in statement
+    )
+    revoke_index = next(
+        i for i, statement in enumerate(statements) if "demo_password_rotated" in statement
+    )
+    assert revoke_index < bump_index < password_index
+
+
+def test_private_credential_file_contains_all_three_demo_accounts(tmp_path: Path) -> None:
+    path = tmp_path / "demo-account-credentials.json"
+    seed.create_credentials_file(path)
+
+    payload = json.loads(path.read_text())
+    assert payload["version"] == 1
+    assert set(payload["accounts"]) == {"organizer", "reviewer", "speaker"}
+    assert {
+        role: account["email"] for role, account in payload["accounts"].items()
+    } == seed.DEMO_EMAILS
+    assert len({account["password"] for account in payload["accounts"].values()}) == 3
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert seed.load_credentials(path) == payload["accounts"]
+
+
+def test_credential_loader_rejects_a_world_readable_secret(tmp_path: Path) -> None:
+    path = tmp_path / "demo-account-credentials.json"
+    seed.create_credentials_file(path)
+    path.chmod(0o644)
+
+    with pytest.raises(seed.SeedError, match="must not be group/world accessible"):
+        seed.load_credentials(path)
+
+
+def test_runtime_provisioning_rotates_each_expected_demo_account(monkeypatch) -> None:
+    credentials = {
+        role: {"email": email, "password": f"a-secure-{role}-password"}
+        for role, email in seed.DEMO_EMAILS.items()
+    }
+    sessions: dict[int, str] = {}
+    requests: list[tuple[str, str, dict | None, str | None]] = []
+
+    monkeypatch.setattr(seed, "build_opener", lambda *_args: object())
+
+    def fake_request(opener, url, *, method="GET", body=None, csrf=None):
+        requests.append((method, url, body, csrf))
+        if url.endswith("/demo-sign-in"):
+            sessions[id(opener)] = body["role"]
+            return {"authenticated": True, "csrf_token": f"csrf-{body['role']}"}
+        if url.endswith("/password/sign-in"):
+            role = next(
+                role for role, account in credentials.items() if account["email"] == body["email"]
+            )
+            assert body["password"] == credentials[role]["password"]
+            return {"authenticated": True, "user_id": seed.DEMO_USER_IDS[role]}
+        role = sessions[id(opener)]
+        if method == "GET":
+            first_name, last_name = seed.DEMO_NAMES[role][1:]
+            return {
+                "email": credentials[role]["email"],
+                "first_name": first_name,
+                "last_name": last_name,
+                "public_profile_enabled": False,
+                "version": 7,
+            }
+        assert body["password"] == credentials[role]["password"]
+        assert body["password_confirmation"] == credentials[role]["password"]
+        assert csrf == f"csrf-{role}"
+        return {"has_password": True}
+
+    monkeypatch.setattr(seed, "_runtime_request", fake_request)
+
+    seed.provision_runtime_credentials("https://demo.example.test", credentials)
+
+    assert [request[0] for request in requests] == ["POST", "GET", "PATCH", "POST"] * 3
+    assert [request[2]["role"] for request in requests if request[1].endswith("/demo-sign-in")] == [
+        "organizer",
+        "reviewer",
+        "speaker",
+    ]
+
+
+def test_runtime_provisioning_requires_a_plain_https_origin() -> None:
+    with pytest.raises(seed.SeedError, match="HTTPS or loopback HTTP origin"):
+        seed.provision_runtime_credentials("http://demo.example.test", {})
+    with pytest.raises(seed.SeedError, match="HTTPS or loopback HTTP origin"):
+        seed.provision_runtime_credentials("https://user:secret@example.test", {})
+
+
+def test_runtime_provisioning_allows_loopback_http(monkeypatch) -> None:
+    monkeypatch.setattr(seed, "build_opener", lambda *_args: object())
+    seed.provision_runtime_credentials("http://127.0.0.1:8787", {})
+
+
+def test_each_demo_persona_password_rotation_is_an_idempotent_upsert() -> None:
+    statement = seed.password_credential_statement("demo-user", "$pbkdf2-sha256$i=1$a$b", 1_700)
+    assert statement.startswith("INSERT INTO password_credentials")
+    assert "ON CONFLICT(user_id) DO UPDATE" in statement
+    assert "pepper_version=1" in statement
+
+
+@pytest.mark.parametrize("role", ["reviewer", "speaker"])
+def test_non_organizer_demo_personas_are_created_idempotently(role: str) -> None:
+    statements = seed.persona_statements(
+        "org-1", role=role, verifier="$pbkdf2-sha256$i=1$a$b", now_ms=1_700
+    )
+    inserts = [statement for statement in statements if statement.startswith("INSERT")]
+    assert len(inserts) == 4
+    assert all("ON CONFLICT" in statement for statement in inserts)
+    assert seed.DEMO_USER_IDS[role] in " ".join(statements)
+    assert seed.DEMO_EMAILS[role] in statements[0]
+    password_index = next(
+        i for i, statement in enumerate(statements) if "password_credentials" in statement
+    )
+    bump_index = next(
+        i for i, statement in enumerate(statements) if "authorization_version+1" in statement
+    )
+    revoke_index = next(
+        i for i, statement in enumerate(statements) if "demo_password_rotated" in statement
+    )
+    assert revoke_index < bump_index < password_index
 
 
 def test_demo_seed_marks_new_and_existing_personas_profile_complete() -> None:

@@ -550,6 +550,11 @@ resolver table used by the distributor.
   is unconfigured.
 - Demo identities are referenced by user id, never display name, and the
   synthetic organizer holds a `manage` grant rather than resource ownership.
+- The local, development, and secondary-development demo identities use one
+  ignored mode-`0600` credential registry. The seed can create or repair all
+  three deterministic accounts directly, or rotate an existing deployment
+  through its authenticated profile API so each environment retains its own
+  password pepper. Password sign-in is verified after every runtime rotation.
 - See `docs/demo-accounts.md` for seeding, repair, and purge procedures.
 
 ## Evaluation round names

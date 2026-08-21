@@ -21,8 +21,8 @@ exactly as before.
 | Role | Lands on | Identity |
 | --- | --- | --- |
 | Organizer | `/admin` | `demo-organizer@sessionbuddy.demo`, created by the seed |
-| Reviewer | `/reviews` | An existing reviewer account, referenced by id |
-| Speaker | `/speaker` | An existing speaker account, referenced by id |
+| Reviewer | `/reviews` | `demo-reviewer@sessionbuddy.demo`, created by the seed |
+| Speaker | `/speaker` | `demo-speaker@sessionbuddy.demo`, created by the seed |
 
 Personas are always resolved by **user id**, never by display name. Names are
 mutable and not unique, so a different database's unrelated "Sam Whitfield"
@@ -63,13 +63,22 @@ runtime meaning it did not already have.
 The seed is data, never a migration. It is idempotent: re-running it repairs
 the demo organizer in place rather than creating duplicates.
 
+Generate the ignored credential registry once, then reuse it for every demo
+environment. It contains a separate password for each persona, is created with
+mode `0600`, and must remain under `.local/`:
+
 ```sh
-export DEMO_ACCOUNT_PASSWORD='a password of at least fifteen characters'
 export PASSWORD_PEPPER="$(grep '^PASSWORD_PEPPER=' .dev.vars | cut -d= -f2-)"
 
 docker compose run --rm --no-deps worker \
-  uv run python scripts/seed_demo_accounts.py --local
+  uv run python scripts/seed_demo_accounts.py --local --create-credentials
 ```
+
+Subsequent runs omit `--create-credentials`. The seed refuses a credential file
+that is group/world accessible and verifies each configured user id against the
+expected `demo-*@sessionbuddy.demo` email before changing a password. It rotates
+only the three demo credentials, bumps their authorization versions to end old
+sessions, and never prints a plaintext password.
 
 The script prints the three ids to paste into `.dev.vars` (local) or the demo
 environment's `vars` block, and reports whether every configured persona is
@@ -80,6 +89,31 @@ Against a deployed database, name the wrangler environment and the tenant:
 
 ```sh
 uv run python scripts/seed_demo_accounts.py --env dev --organization-id <id>
+```
+
+When the deployed environment's password pepper is intentionally unavailable,
+rotate the three existing demo accounts through the running application. This
+uses the gated demo sign-in endpoint, verifies each expected email, preserves
+the profile, and lets that deployment hash the new password with its own
+secret:
+
+```sh
+uv run python scripts/seed_demo_accounts.py \
+  --app-url https://sessionbuddy-development.example.workers.dev
+```
+
+Use the same ignored credential registry for local, development, and a second
+development deployment. The script never sends one environment's password
+pepper to another environment and never prints a password.
+
+For a private Wrangler configuration or a target-specific pepper file, pass
+them explicitly without copying either into source control:
+
+```sh
+uv run python scripts/seed_demo_accounts.py --env dev2 \
+  --config .cloudflare-private/dev2/wrangler.rendered.jsonc \
+  --pepper-file .cloudflare-private/dev2/password-pepper.secret \
+  --organization-id <id>
 ```
 
 The script refuses to run unless `DEMO_LOGIN_ENABLED=true` is set for the
