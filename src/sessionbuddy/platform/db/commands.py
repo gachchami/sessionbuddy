@@ -84,6 +84,12 @@ class CommandBatch:
             )
         )
 
+    @property
+    def statement_count(self) -> int:
+        """Index the next statement will occupy, so a caller can locate its
+        own row-count in the batch result and verify a conditional write."""
+        return len(self.__statements)
+
     def add_statement(self, statement: D1PreparedStatement) -> None:
         self.__statements.append(statement)
 

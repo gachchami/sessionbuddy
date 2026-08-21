@@ -1613,3 +1613,14 @@ input[type="file"]::file-selector-button:hover { background: #f2f4f7; }
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
 }
+
+/* Demo persona access. Rendered only when the server confirms demo mode. */
+.demo-access { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid #e7e5f0; }
+.demo-access__title { margin: 0; font-size: .875rem; font-weight: 600; color: #40365d; }
+.demo-access__intro { margin: .3rem 0 .9rem; color: #6b7280; font-size: .75rem; }
+.demo-access__list { display: grid; gap: .6rem; margin: 0; padding: 0; list-style: none; }
+.demo-access__item { display: grid; gap: .2rem; }
+.demo-access__button { width: 100%; justify-content: center; }
+.demo-access__button[data-loading="true"] { cursor: progress; }
+.demo-access__description { color: #6b7280; font-size: .75rem; line-height: 1.35; }
+@media (prefers-reduced-motion: reduce) { .demo-access__button { transition: none; } }

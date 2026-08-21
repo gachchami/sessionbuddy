@@ -108,12 +108,21 @@
       "name": "MAGIC_LINK_SOURCE_RATE_LIMITER",
       "namespace_id": "1008",
       "simple": {"limit": 10, "period": 60}
+    },
+    {
+      "name": "DEMO_AUTH_RATE_LIMITER",
+      "namespace_id": "1009",
+      "simple": {"limit": 30, "period": 60}
     }
   ],
   "vars": {
     "APP_ENV": "local",
     "APP_VERSION": "development",
     "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787,http://worker:8787,https://localhost:8443",
+    "DEMO_LOGIN_ENABLED": "true",
+    "DEMO_ORGANIZER_USER_ID": "c2c12e5e-2cea-5d9a-bf7f-dc5dc012e2b4",
+    "DEMO_REVIEWER_USER_ID": "fdbfb220-b96a-4f5e-a5bd-92721ffa73bd",
+    "DEMO_SPEAKER_USER_ID": "96c71d5a-6250-4ffa-9424-4b1245878ce8",
     "MALWARE_SCAN_MODE": "required",
     "PUBLIC_BASE_URL": "http://127.0.0.1:8787",
     "MAILPIT_API_URL": "http://mailpit:8025",
@@ -212,6 +221,11 @@
           "name": "MAGIC_LINK_SOURCE_RATE_LIMITER",
           "namespace_id": "1008",
           "simple": {"limit": 10, "period": 60}
+        },
+        {
+          "name": "DEMO_AUTH_RATE_LIMITER",
+          "namespace_id": "1009",
+          "simple": {"limit": 30, "period": 60}
         }
       ],
       "limits": {
@@ -222,6 +236,10 @@
         "APP_VERSION": "development",
         "ALLOWED_ORIGINS": "https://sessionbuddy-development.shiny-cloud-dd47.workers.dev",
         "CLOUDFLARE_ACCOUNT_ID": "11b5e48aa7648b805e4602b5e980beb2",
+        "DEMO_LOGIN_ENABLED": "false",
+        "DEMO_ORGANIZER_USER_ID": "",
+        "DEMO_REVIEWER_USER_ID": "",
+        "DEMO_SPEAKER_USER_ID": "",
         "MALWARE_SCAN_MODE": "disabled",
         "PUBLIC_BASE_URL": "https://sessionbuddy-development.shiny-cloud-dd47.workers.dev",
         "R2_BUCKET_NAME": "sessionbuddy-assets-development",

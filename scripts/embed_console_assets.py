@@ -53,6 +53,7 @@ ASSETS = {
     "auth_link_confirm.html": "AUTH_LINK_CONFIRM_HTML",
     "auth_link_confirm.js": "AUTH_LINK_CONFIRM_JS",
     "sign_in.js": "SIGN_IN_JS",
+    "demo_access.js": "DEMO_ACCESS_JS",
     "access_admin.html": "ACCESS_ADMIN_HTML",
     "access_admin.js": "ACCESS_ADMIN_JS",
     "events_admin.html": "EVENTS_ADMIN_HTML",

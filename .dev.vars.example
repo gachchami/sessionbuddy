@@ -12,3 +12,11 @@ CLOUDFLARE_ACCOUNT_ID=replace-with-account-id
 R2_BUCKET_NAME=sessionbuddy-assets-development
 R2_ACCESS_KEY_ID=replace-with-r2-object-write-access-key
 R2_SECRET_ACCESS_KEY=replace-with-r2-object-write-secret
+# Password-free demo sign-in. Overrides wrangler vars for local development.
+# DEMO_LOGIN_ENABLED is honoured only when APP_ENV is local or development.
+# Run scripts/seed_demo_accounts.py to create and repair these identities; it
+# prints the ids to paste here.
+DEMO_LOGIN_ENABLED=true
+DEMO_ORGANIZER_USER_ID=c2c12e5e-2cea-5d9a-bf7f-dc5dc012e2b4
+DEMO_REVIEWER_USER_ID=replace-with-the-seeded-reviewer-user-id
+DEMO_SPEAKER_USER_ID=replace-with-the-seeded-speaker-user-id

@@ -103,6 +103,34 @@ def static_configuration_checks(environment: dict, variables: dict[str, str]) ->
             "PUBLIC_BASE_URL is allowlisted" if base_url in allowed_origins else "origin mismatch",
         )
     )
+    # Demo sign-in mints a session without a credential. Match the runtime's
+    # explicit environment allowlist so copied configuration fails closed.
+    demo_login = variables.get("DEMO_LOGIN_ENABLED", "").strip().lower()
+    demo_identities = [
+        variables.get(name, "").strip()
+        for name in ("DEMO_ORGANIZER_USER_ID", "DEMO_REVIEWER_USER_ID", "DEMO_SPEAKER_USER_ID")
+    ]
+    if demo_login == "true" and app_environment not in {"local", "development"}:
+        checks.append(
+            Check(
+                "FAIL",
+                "demo sign-in",
+                "password-free demo login is allowed only in local or development; "
+                f"got {app_environment or 'an unnamed environment'}",
+            )
+        )
+    elif demo_login == "true" and not all(demo_identities):
+        checks.append(
+            Check(
+                "FAIL",
+                "demo sign-in",
+                "every DEMO_*_USER_ID must be set when demo login is enabled",
+            )
+        )
+    elif demo_login == "true":
+        checks.append(Check("PASS", "demo sign-in", f"explicit {app_environment} demo personas"))
+    else:
+        checks.append(Check("PASS", "demo sign-in", "disabled"))
     scan_mode = variables.get("MALWARE_SCAN_MODE", "required")
     if scan_mode == "disabled" and app_environment not in {"local", "development"}:
         checks.append(

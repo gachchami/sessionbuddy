@@ -31,7 +31,6 @@ from sessionbuddy.platform.storage import malware_scan_disabled
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
-from .cookies import sign_session_cookie
 from .csrf import issue_csrf_token
 from .http import (
     authenticate_request,
@@ -44,6 +43,11 @@ from .http import (
     secret,
 )
 from .passwords import PasswordPolicyError, hash_password, verify_password
+from .session_factory import confirm_session_established as _confirm_session_established
+from .session_factory import establish_session
+from .session_factory import role_compatible_redirect as _role_compatible_redirect
+from .session_factory import set_session_cookie as _set_session_cookie
+from .session_factory import valid_redirect as _valid_redirect
 from .tokens import generate_token, hash_token, normalize_email
 
 access_router = APIRouter()
@@ -120,6 +124,11 @@ async def setup_javascript() -> Response:
 @access_router.get("/auth/assets/sign-in.js", include_in_schema=False)
 async def sign_in_javascript() -> Response:
     return Response(_asset("sign_in.js"), media_type="text/javascript")
+
+
+@access_router.get("/auth/assets/demo-access.js", include_in_schema=False)
+async def demo_access_javascript() -> Response:
+    return Response(_asset("demo_access.js"), media_type="text/javascript")
 
 
 @access_router.get("/auth/assets/auth-link-confirm.js", include_in_schema=False)
@@ -759,40 +768,6 @@ class CurrentSession(BaseModel):
     event_access: list[SessionEventAccess] = Field(default_factory=list)
 
 
-def _role_destination(role: str | None) -> str:
-    destination = {
-        "organizer": "/admin",
-        "reviewer": "/reviews",
-        "speaker": "/speaker",
-    }.get(role or "")
-    if destination is None:
-        raise HTTPException(status_code=403)
-    return destination
-
-
-def _role_compatible_redirect(redirect_path: str, role: str) -> str:
-    """Keep role-scoped workspaces from leaking across sign-in personas."""
-    role_prefixes = {
-        "organizer": ("/admin",),
-        "reviewer": ("/reviews",),
-        "speaker": ("/speaker",),
-    }
-    requested_role = next(
-        (
-            candidate
-            for candidate, prefixes in role_prefixes.items()
-            if any(
-                redirect_path == prefix or redirect_path.startswith(f"{prefix}/")
-                for prefix in prefixes
-            )
-        ),
-        None,
-    )
-    if requested_role is not None and requested_role != role:
-        return _role_destination(role)
-    return _role_destination(role) if redirect_path == "/" else redirect_path
-
-
 async def _default_account_role(db, user_id: str) -> str | None:
     row = row_mapping(
         await db.prepare(
@@ -889,10 +864,6 @@ class SubmissionRegistration(BaseModel):
         if self.password != self.password_confirmation:
             raise ValueError("password confirmation does not match")
         return self
-
-
-def _valid_redirect(value: str) -> bool:
-    return value.startswith("/") and not value.startswith("//") and "\\" not in value
 
 
 def _validated_email(value: str) -> str:
@@ -5159,25 +5130,20 @@ async def password_sign_in(
     default_role = await _default_account_role(db, str(credential["id"]))
     if default_role is None:
         raise HTTPException(status_code=403)
-    session_id, session_token = new_id(), generate_token()
-    csrf = issue_csrf_token(session_id, secret(request, "CSRF_HMAC_KEY"))
     batch = CommandBatch(db)
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO sessions
-               (id,user_id,token_hash,csrf_secret_hash,authorization_version,created_at_ms,
-                last_seen_at_ms,idle_expires_at_ms,absolute_expires_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?6,?7,?8)"""
-        ).bind(
-            session_id,
-            credential["id"],
-            hash_token(session_token),
-            hash_token(csrf),
-            credential["authorization_version"],
-            now,
-            now + 12 * 60 * 60 * 1000,
-            now + 30 * 24 * 60 * 60 * 1000,
-        )
+    established = establish_session(
+        batch=batch,
+        db=db,
+        request=request,
+        user_id=str(credential["id"]),
+        role=default_role,
+        authorization_version=int(credential["authorization_version"]),
+        now_ms=now,
+    )
+    session_id, session_token, csrf = (
+        established.session_id,
+        established.session_token,
+        established.csrf_token,
     )
     batch.add_statement(
         db.prepare(
@@ -5188,12 +5154,6 @@ async def password_sign_in(
                  first_failure_at_ms=NULL,last_failure_at_ms=NULL,blocked_until_ms=NULL,
                  last_success_at_ms=?2,updated_at_ms=?2"""
         ).bind(credential["id"], now)
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
-               VALUES(?1,?2,?3,?4)"""
-        ).bind(session_id, credential["id"], default_role, now)
     )
     batch.add_statement(
         db.prepare("UPDATE password_credentials SET last_verified_at_ms=?1 WHERE user_id=?2").bind(
@@ -5212,17 +5172,9 @@ async def password_sign_in(
             occurred_at_ms=now,
         )
     )
-    await batch.execute()
-    deployed = getattr(request.scope.get("env"), "APP_ENV", "production") != "local"
-    response.set_cookie(
-        "__Host-session" if deployed else "sessionbuddy-local",
-        sign_session_cookie(session_token, secret(request, "SESSION_HMAC_KEY")),
-        max_age=30 * 24 * 60 * 60,
-        httponly=True,
-        secure=deployed,
-        samesite="lax",
-        path="/",
-    )
+    results = await batch.execute()
+    await _confirm_session_established(results, established, db)
+    _set_session_cookie(response, request, session_token)
     return SessionCreated(
         user_id=str(credential["id"]),
         csrf_token=csrf,
@@ -5706,16 +5658,7 @@ async def _finish_magic_link_sign_in(
         .bind(session_id, user_id, session_role, now)
         .run()
     )
-    deployed = getattr(request.scope.get("env"), "APP_ENV", "production") != "local"
-    response.set_cookie(
-        "__Host-session" if deployed else "sessionbuddy-local",
-        sign_session_cookie(session_token, secret(request, "SESSION_HMAC_KEY")),
-        max_age=30 * 24 * 60 * 60,
-        httponly=True,
-        secure=deployed,
-        samesite="lax",
-        path="/",
-    )
+    _set_session_cookie(response, request, session_token)
     return SessionCreated(
         user_id=str(user_id),
         csrf_token=csrf,

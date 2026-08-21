@@ -543,6 +543,19 @@
         "p95_ms": 500
       }
     },
+    "GET /api/v1/auth/demo-personas": {
+      "benchmark": "identity-demo-personas",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
     "GET /api/v1/auth/session": {
       "benchmark": "identity-current-session",
       "dashboards": [
@@ -1729,6 +1742,19 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 500
+      }
+    },
+    "POST /api/v1/auth/demo-sign-in": {
+      "benchmark": "identity-demo-sign-in",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
       }
     },
     "POST /api/v1/auth/magic-links": {

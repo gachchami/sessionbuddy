@@ -441,3 +441,28 @@ resolver table used by the distributor.
   fact. Revoking it removes review and event-assignment visibility immediately.
 - Reviewer invitations establish the Reviewer persona only. They do not grant
   organization membership, event membership, organizer access, or speaker access.
+
+## Demo persona sign-in
+
+- `/sign-in` and the landing page can offer one control per account persona
+  (Organizer, Reviewer, Speaker) that signs in without a password.
+- The capability requires both `APP_ENV=local` or `APP_ENV=development` and an
+  explicit `DEMO_LOGIN_ENABLED=true`, matched case-insensitively and trimmed.
+  Missing or unknown environments and absent, empty, `1`, or `yes` flags all
+  fail closed.
+- `POST /api/v1/auth/demo-sign-in` accepts a role and nothing else. The role to
+  user-id mapping is server-owned configuration, so the endpoint cannot be used
+  for arbitrary account impersonation.
+- Demo sessions are created through the same helper as password sign-in, so
+  cookie policy, CSRF binding, expiry, and authorization version are identical.
+- A session row and its active-role row are written by one conditional insert
+  pair, so a role revoked mid-request yields no session at all rather than a
+  valid cookie with no persona. No cookie is issued unless the write landed.
+- Signing into a demo persona while already authenticated revokes the previous
+  session rather than leaving a valid row behind.
+- `scripts/cloudflare_preflight.py` mirrors the runtime gate: it fails if demo
+  sign-in is enabled outside `local` or `development`, or if any demo identity
+  is unconfigured.
+- Demo identities are referenced by user id, never display name, and the
+  synthetic organizer holds a `manage` grant rather than resource ownership.
+- See `docs/demo-accounts.md` for seeding, repair, and purge procedures.

@@ -24,6 +24,7 @@ from sessionbuddy.platform.auth.access import (
 from sessionbuddy.platform.auth.access import (
     current_session as current_access_session,
 )
+from sessionbuddy.platform.auth.demo_router import demo_router
 from sessionbuddy.platform.auth.http import session_cookie_value
 from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
@@ -45,6 +46,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestObservabilityMiddleware)
 app.include_router(engine_room_router)
 app.include_router(session_router)
+app.include_router(demo_router)
 app.include_router(access_router)
 app.include_router(cfp_router)
 app.include_router(evaluation_router)
@@ -145,6 +147,15 @@ async def root(request: Request) -> Response:
     return HTMLResponse(
         embedded_assets.LANDING_HTML,
         headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/landing/assets/demo-access.js", response_class=Response, include_in_schema=False)
+async def landing_demo_access_javascript() -> Response:
+    return Response(
+        embedded_assets.DEMO_ACCESS_JS,
+        media_type="text/javascript",
+        headers={"Cache-Control": "public, max-age=300"},
     )
 
 

@@ -3360,6 +3360,109 @@
         "title": "DefaultRoleUpdate",
         "type": "object"
       },
+      "DemoPersonaList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DemoPersonaView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "DemoPersonaList",
+        "type": "object"
+      },
+      "DemoPersonaView": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "destination": {
+            "title": "Destination",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "organizer",
+              "reviewer",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "label",
+          "description",
+          "destination"
+        ],
+        "title": "DemoPersonaView",
+        "type": "object"
+      },
+      "DemoSessionCreated": {
+        "properties": {
+          "authenticated": {
+            "default": true,
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          },
+          "redirect_path": {
+            "title": "Redirect Path",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "csrf_token",
+          "redirect_path"
+        ],
+        "title": "DemoSessionCreated",
+        "type": "object"
+      },
+      "DemoSignIn": {
+        "additionalProperties": false,
+        "properties": {
+          "redirect_path": {
+            "default": "/",
+            "maxLength": 512,
+            "title": "Redirect Path",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "organizer",
+              "reviewer",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "DemoSignIn",
+        "type": "object"
+      },
       "DispatchResponse": {
         "additionalProperties": false,
         "properties": {
@@ -17453,6 +17556,68 @@
         "summary": "Consume Asset Download Grant",
         "tags": [
           "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/auth/demo-personas": {
+      "get": {
+        "operationId": "listDemoPersonas",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoPersonaList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Demo Personas",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/demo-sign-in": {
+      "post": {
+        "operationId": "createDemoSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoSessionCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Sign In",
+        "tags": [
+          "authentication"
         ]
       }
     },

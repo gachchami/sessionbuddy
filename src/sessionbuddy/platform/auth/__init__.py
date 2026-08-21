@@ -2,6 +2,8 @@
 
 from .cookies import sign_session_cookie, verify_session_cookie
 from .csrf import issue_csrf_token, verify_csrf_token
+from .demo import DemoPersona, configured_personas, demo_login_enabled, persona_for_role
+from .demo_router import demo_router
 from .http import (
     AuthenticatedContext,
     authenticate_request,
@@ -20,11 +22,16 @@ __all__ = [
     "CookiePolicy",
     "AuthenticatedContext",
     "AuthenticationResult",
+    "DemoPersona",
     "MutationGuardDecision",
     "SessionDecision",
     "SessionPolicy",
     "SessionRecord",
     "session_router",
+    "configured_personas",
+    "demo_login_enabled",
+    "demo_router",
+    "persona_for_role",
     "guard_cookie_mutation",
     "guard_mutation",
     "authenticate_session",
