@@ -3,6 +3,18 @@
 This is the canonical capability-oriented status record. Numbered delivery phases
 are no longer used as product or architecture terminology.
 
+## Shared interface
+
+In progress: the approved TaskFlow-inspired visual system now spans the shared
+organizer, reviewer, speaker, public, authentication, documentation, and console
+surfaces. It uses detached navigation, white work panels on a pale canvas,
+compact typography, and blue primary actions. `DESIGN.md` records the reusable
+visual contract; existing authorization and workflow contracts remain unchanged.
+Independent rendered review covers the captured default/error states, not every
+hidden state. Desktop/mobile page audits pass accessibility and overflow checks;
+complete interaction verification and the release gate remain separate criteria.
+This visual work has not been deployed.
+
 ## Platform and Engine Room
 
 In progress: organization-scoped admin invitations separate the fixed three-day

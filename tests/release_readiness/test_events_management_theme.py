@@ -87,7 +87,7 @@ def test_event_editor_uses_the_operate_layout_and_lifecycle_controls() -> None:
     assert 'saved.status === "archived" ? "Event archived."' in script
     assert ".event-editor__save-bar" in styles
     assert "position: sticky" in styles
-    assert "grid-template-columns: minmax(0, 46rem) minmax(16rem, 22rem)" in styles
+    assert "grid-template-columns: minmax(0, 2.2fr) minmax(16rem, 1fr)" in styles
 
 
 def test_source_wiring_event_branding_uploads_have_live_preview_and_save_boundary() -> None:

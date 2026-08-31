@@ -62,8 +62,36 @@ async function mockApis(page: Page): Promise<SessionControl> {
 const speculationRules = (page: Page) => page.locator('script[type="speculationrules"]');
 const prefetchHints = (page: Page) => page.locator('link[rel="prefetch"][as="document"]');
 
+async function openEventNavigation(page: Page) {
+  await expect(page.locator(".sb-event-nav")).toHaveCount(1, { timeout: 4000 });
+  const menu = page.getByRole("button", { name: "Open navigation", exact: true });
+  if (await menu.isVisible()) await menu.click();
+  await expect(page.locator(".sb-event-nav")).toBeVisible();
+}
+
 test.describe("app shell navigation runtime", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
+
+  test("mobile navigation backdrop covers viewport corners and dismisses safely", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockApis(page);
+    await page.goto(`/admin/events/${eventId}`);
+    await openEventNavigation(page);
+    const backdrop = page.locator(".sb-nav-backdrop");
+    await expect(backdrop).toBeVisible();
+    await expect(page.locator(".sb-sidebar a").first()).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(backdrop).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.locator(".sb-sidebar a").first()).toBeFocused();
+    // Hit testing catches a pill-shaped overlay even when its bounding box
+    // spans the viewport. Both exposed corners must actually intercept input.
+    expect(await page.evaluate(() => [[innerWidth - 2, 2], [innerWidth - 2, innerHeight - 2]]
+      .every(([x, y]) => document.elementFromPoint(x, y)?.classList.contains("sb-nav-backdrop")))).toBe(true);
+    await page.mouse.click(388, 842);
+    await expect(backdrop).toBeHidden();
+    await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeFocused();
+  });
 
   test("the Worker's CSP admits the speculation rule and hover keeps one debounced candidate", async ({ page, isMobile }) => {
     test.skip(isMobile, "Pointer hover intent is not a mobile interaction; see the touch test below.");
@@ -79,12 +107,12 @@ test.describe("app shell navigation runtime", () => {
     const nav = page.locator(".sb-event-nav");
     await expect(nav).toBeVisible();
 
-    // Sweep the pointer across the whole bar in well under the intent delay:
+    // Sweep vertically across the sidebar links in under the intent delay:
     // crossing must not arm any prerender.
     const box = (await nav.boundingBox())!;
-    await page.mouse.move(box.x + 2, box.y + box.height / 2);
-    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 });
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height + 60);
+    await page.mouse.move(box.x + box.width / 2, box.y + 2);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height - 2, { steps: 8 });
+    await page.mouse.move(box.x + box.width + 40, 100);
     await page.waitForTimeout(250);
     await expect(speculationRules(page)).toHaveCount(0);
 
@@ -110,7 +138,7 @@ test.describe("app shell navigation runtime", () => {
     test.skip(!isMobile, "Touch semantics are covered by the mobile-chrome project.");
     await mockApis(page);
     await page.goto(`/admin/events/${eventId}`);
-    await expect(page.locator(".sb-event-nav")).toBeVisible();
+    await openEventNavigation(page);
 
     // touchstart is dispatched directly so warming can be observed without
     // the tap's click immediately navigating away from the assertions.
@@ -130,6 +158,7 @@ test.describe("app shell navigation runtime", () => {
     await mockApis(page);
     await page.goto(`/admin/events/${eventId}`);
 
+    await openEventNavigation(page);
     const links = page.locator(".sb-event-nav a:not([aria-current='page'])");
     const linkCount = await links.count();
     expect(linkCount).toBeGreaterThan(3);
@@ -147,7 +176,7 @@ test.describe("app shell navigation runtime", () => {
   test("navigating between event pages paints the shell before the network answers", async ({ page }) => {
     const control = await mockApis(page);
     await page.goto(`/admin/events/${eventId}`);
-    await expect(page.locator(".sb-event-nav")).toBeVisible();
+    await openEventNavigation(page);
     await page.waitForFunction(() => sessionStorage.getItem("sessionbuddy:shell-session") !== null);
 
     // The persisted record is presentation-only: no CSRF token, no user id.
@@ -166,17 +195,17 @@ test.describe("app shell navigation runtime", () => {
     await expect(page.locator(".sb-topbar__title")).toHaveText("Checking access for Shell Navigator…");
     await expect(page.locator(".sb-event-nav")).toHaveCount(0);
     await expect(page.locator(".sb-account")).toHaveCount(0);
-    await expect(page.locator(".sb-event-nav")).toBeVisible({ timeout: 4000 });
+    await openEventNavigation(page);
 
     // Durable URLs stay the browser's. Back and Forward repeat the same safe
     // identity-first, authority-after-response sequence.
     await page.goBack();
     await page.waitForURL(`**/admin/events/${eventId}`);
     await expect(page.locator(".sb-global-brand:not(a)")).toBeVisible({ timeout: 1200 });
-    await expect(page.locator(".sb-event-nav")).toBeVisible({ timeout: 4000 });
+    await openEventNavigation(page);
     await page.goForward();
     await page.waitForURL(`**/admin/events/${eventId}/cfp`);
     await expect(page.locator(".sb-global-brand:not(a)")).toBeVisible({ timeout: 1200 });
-    await expect(page.locator(".sb-event-nav")).toBeVisible({ timeout: 4000 });
+    await openEventNavigation(page);
   });
 });

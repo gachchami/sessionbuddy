@@ -48,13 +48,13 @@ def test_auth_setup_invitation_and_error_pages_have_specific_surfaces() -> None:
             assert hook in markup, f"{filename} is missing {hook}"
 
 
-def test_page_specific_stylesheets_own_visual_treatments() -> None:
+def test_source_wiring_page_specific_stylesheets_own_visual_treatments() -> None:
     styles = {
-        "landing.css": (".marketing-page", ".hero:after"),
+        "landing.css": (".marketing-page", ".hero-grid"),
         "speaker.css": (".speaker-portal-page", ".portal-hero"),
         "schedule.css": (".schedule-page", ".schedule-hero", ".schedule-controls"),
-        "setup.css": ("linear-gradient", ".setup-card"),
-        "error_page.css": ("radial-gradient", ".status-panel", ".route-line"),
+        "setup.css": (".setup-body", ".setup-card"),
+        "error_page.css": (".error-surface", ".status-panel", ".route-line"),
     }
     for filename, markers in styles.items():
         stylesheet = page(filename)

@@ -4,32 +4,34 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Organizer workspace · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=90">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=27">
-  <link rel="stylesheet" href="/admin/home/assets/home.css?v=6e917edc9590">
+  <link rel="stylesheet" href="/product/assets/product.css?v=91">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=28">
+  <link rel="stylesheet" href="/admin/home/assets/home.css?v=08f958efd373">
   <script src="/app-shell/assets/api-client.js?v=10" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=35" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=38" defer></script>
   <script src="/app-shell/assets/activity-format.js?v=1044747b380e" defer></script>
-  <script src="/admin/home/assets/home.js?v=80d273e68e54" defer></script>
+  <script src="/admin/home/assets/home.js?v=8cf3c6974754" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--home">
+  <!-- Design contract — seed 7b4936a9. TaskFlow is the pinned visual authority:
+  detached white navigation and header, pale blue canvas, 12–16px rounded work
+  panels, compact DM Sans, muted blue selection, pastel states and blue-gradient
+  pill actions. Adapt the real organizer, reviewer and speaker workflows without
+  inventing calendar data, metrics, meetings or commercial claims. Preserve all
+  routing, roles, interaction hooks, keyboard affordances and truthful states.
+  Home is a compact event workbench: one full date, no redundant date tile;
+  event titles and one truthful next action lead, workflow shortcuts remain visible,
+  and Manage/Clone disclose under More. Neutral activity recedes into a timeline.
+  Organization search and switching remain available even with one organization.
+  Mobile retains attention and readable controls. FINISH: inspect desktop and mobile, challenge the rendered reference
+  fidelity independently, resolve material findings and disclose remaining limits. -->
   <a class="skip-link" href="#events">Skip to events</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page organizer-main" tabindex="-1">
-    <header class="organizer-home-heading">
-      <div class="organizer-home-heading__identity">
+      <div id="workspace-heading" class="organizer-home-heading__identity">
         <h1>Organizer workspace</h1>
         <p id="workspace-summary">Loading your organizations…</p>
       </div>
-      <div class="actions organizer-home-page-actions">
-        <a id="organization-settings" class="button secondary" href="/admin/organization">Organization settings</a>
-        <a id="new-event" class="button" href="/admin/events/new" hidden>Create event</a>
-      </div>
-      <label id="organization-picker-label" class="organizer-home-organization-picker" hidden>
-        <span>Switch organization</span>
-        <select id="organization-picker"></select>
-      </label>
-    </header>
     <p id="status" class="status status-compact organizer-home-status" role="status" aria-live="polite">Loading your workspace…</p>
 
     <div class="organizer-home-grid">
@@ -50,6 +52,16 @@
             <h2 id="events-title" tabindex="-1">Loading organization…</h2>
             <p><span id="event-count" class="organizer-home-count" aria-live="polite"></span></p>
           </div>
+          <div class="organizer-home-heading">
+            <label id="organization-picker-label" class="organizer-home-organization-picker" hidden>
+              <span>Switch organization</span>
+              <select id="organization-picker"></select>
+            </label>
+            <div class="actions organizer-home-page-actions">
+              <a id="organization-settings" class="button secondary" href="/admin/organization">Organization settings</a>
+              <a id="new-event" class="button" href="/admin/events/new" hidden>Create event</a>
+            </div>
+          </div>
         </div>
         <div class="organizer-home-toolbar">
           <div class="organizer-home-filters" aria-label="Filter events">
@@ -65,6 +77,8 @@
             <label for="event-search">Search</label>
             <input id="event-search" name="q" type="search" maxlength="100" autocomplete="off" placeholder="Name or location">
           </form>
+          <details class="organizer-home-sort-disclosure" id="sort-disclosure" open>
+          <summary>Sort options</summary>
           <label class="organizer-home-sort" for="event-sort">
             <span>Sort</span>
             <select id="event-sort">
@@ -72,6 +86,7 @@
               <option value="recent">Newest first</option>
             </select>
           </label>
+          </details>
         </div>
         <div id="event-table" class="organizer-home-table" role="table" aria-label="Events" aria-busy="true">
           <div class="organizer-home-table__header" role="rowgroup">
@@ -79,7 +94,7 @@
               <span id="event-column-event" role="columnheader">Event</span>
               <span id="event-column-status" role="columnheader">Location</span>
               <span id="event-column-date" role="columnheader">Dates</span>
-              <span id="event-column-program" role="columnheader">Links</span>
+              <span id="event-column-program" role="columnheader">Progress</span>
               <span id="event-column-actions" role="columnheader">Actions</span>
             </div>
           </div>

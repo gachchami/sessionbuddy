@@ -585,7 +585,9 @@
     mount.replaceChildren(nav);
   }
 
+  let navigationListenerController;
   function renderShell(session) {
+    navigationListenerController?.abort();
     const active = activeRole(session);
     if (!active) {
       if (isPersonaNeutralPath()) {
@@ -643,12 +645,12 @@
       brandText.append(make("strong", "SessionBuddy"));
       brand.append(mark, brandText);
     }
-    if (!organizerWorkspace || currentEventId) sidebar.append(brand);
+    sidebar.append(brand);
 
     const primaryGroup = make(
       "div",
       undefined,
-      `sb-sidebar__group sb-sidebar__primary${organizerWorkspace ? " sb-sidebar__mobile-global" : ""}`
+      "sb-sidebar__group sb-sidebar__primary"
     );
     primaryGroup.append(make("p", "Main", "sb-sidebar__label"));
     const nav = make("nav", undefined, "sb-sidebar__nav");
@@ -672,6 +674,10 @@
       if (section === "speaker") nav.append(navLink("Speaker portal", "/speaker", "mic", true));
     }
     primaryGroup.append(nav);
+    const organizationRail = document.getElementById("organization-rail");
+    if (organizerWorkspace && section === "home" && organizationRail) {
+      primaryGroup.append(organizationRail);
+    }
     if (nav.children.length) sidebar.append(primaryGroup);
     if (showPortals) {
       const utilityGroup = make("div", undefined, "sb-sidebar__group sb-sidebar__utility");
@@ -682,15 +688,23 @@
         utilityNav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
         utilityNav.append(navLink("Calls for proposals", "/speaker#calls", "calendar", false));
       }
+      if (accountRoles.has("reviewer")) {
+        utilityNav.append(navLink("Reviews", "/reviews", "review", section === "reviews"));
+      }
       utilityGroup.append(utilityNav);
       if (utilityNav.children.length) sidebar.append(utilityGroup);
     }
+    if (organizerWorkspace && currentEventId && organizationNavigation) {
+      const eventGroup = make("div", undefined, "sb-sidebar__group sb-sidebar__event");
+      eventGroup.append(make("p", "Event workspace", "sb-sidebar__label"), eventNav(currentEventId, true));
+      sidebar.append(eventGroup);
+    }
     speakerHubTabs(organizerWorkspace ? currentEventId : "");
     const hasSidebarNavigation = Boolean(sidebar.querySelector(".sb-sidebar__nav a"));
-    const topbarOnlyWorkspace = singleSpeakerWorkspace || organizerWorkspace
-      || section === "reviews" || !hasSidebarNavigation;
+    const topbarOnlyWorkspace = !hasSidebarNavigation;
     document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace);
 
+    const account = accountMenu(session, roles);
     const topbar = make("div", undefined, "sb-topbar");
     const menuButton = make("button", undefined, "sb-menu-button");
     menuButton.type = "button";
@@ -700,6 +714,12 @@
     menuButton.append(make("span"), make("span"), make("span"));
     const crumb = make("div", undefined, "sb-topbar__title");
     crumb.append(make("strong", pageLabel(section, currentEventId)));
+    // Home owns its live summary. Move that same node on every shell render so
+    // organization updates remain attached and we do not duplicate page titles.
+    const workspaceHeading = document.getElementById("workspace-heading");
+    if (organizerWorkspace && section === "home" && workspaceHeading) {
+      crumb.replaceChildren(workspaceHeading);
+    }
     if (globalOrganizerWorkspace) {
       const globalNav = make("nav", undefined, "sb-global-nav");
       globalNav.setAttribute("aria-label", "Workspace navigation");
@@ -714,60 +734,83 @@
           : brandIdentity("sb-global-brand");
         topbarBrand.className = "sb-global-brand";
         if (session.profile_complete) topbarBrand.append(brandMark(), make("strong", "SessionBuddy"));
-        topbar.append(topbarBrand, globalNav, accountMenu(session, roles));
+        topbar.append(topbarBrand, globalNav, account);
       } else {
         const topbarBrand = session.profile_complete
           ? link("", activeDestination)
           : brandIdentity("sb-global-brand");
         topbarBrand.className = "sb-global-brand";
         if (session.profile_complete) topbarBrand.append(brandMark(), make("strong", "SessionBuddy"));
-        topbar.append(topbarBrand, globalNav, accountMenu(session, roles));
+        topbar.append(topbarBrand, globalNav, account);
       }
     } else if (singleSpeakerWorkspace) {
       const speakerBrand = link("", activeDestination);
       speakerBrand.className = "sb-global-brand";
       speakerBrand.append(brandMark(), make("strong", "SessionBuddy"));
-      topbar.append(speakerBrand, accountMenu(session, roles));
+      topbar.append(speakerBrand, account);
     } else if (!hasSidebarNavigation || section === "reviews") {
       const accountBrand = link("", activeDestination);
       accountBrand.className = "sb-global-brand";
       accountBrand.append(brandMark(), make("strong", "SessionBuddy"));
-      topbar.append(accountBrand, crumb, accountMenu(session, roles));
+      topbar.append(accountBrand, crumb, account);
     } else {
-      topbar.append(menuButton, crumb, accountMenu(session, roles));
+      topbar.append(menuButton, crumb, account);
     }
 
-    const horizontalEventNav = organizerWorkspace && currentEventId && organizationNavigation
-      ? eventNav(currentEventId, true)
-      : null;
     if (topbarOnlyWorkspace) {
       shell.className = "sb-app-shell sb-app-shell--single";
-      shell.replaceChildren(...[topbar, horizontalEventNav].filter(Boolean));
+      shell.replaceChildren(topbar);
       return;
     }
+    // The same navigation is used on desktop and in the mobile drawer. Keep
+    // role and event permission decisions above; this only changes placement.
+    topbar.replaceChildren(menuButton, crumb, account);
 
     const backdrop = make("button", undefined, "sb-nav-backdrop");
     backdrop.type = "button";
     backdrop.setAttribute("aria-label", "Close navigation");
-    const closeNavigation = () => {
+    const closeNavigation = (returnFocus = false) => {
       document.body.classList.remove("sb-navigation-open");
       menuButton.setAttribute("aria-expanded", "false");
       menuButton.setAttribute("aria-label", "Open navigation");
+      if (returnFocus) menuButton.focus();
     };
     const toggleNavigation = () => {
       const open = document.body.classList.toggle("sb-navigation-open");
       menuButton.setAttribute("aria-expanded", String(open));
       menuButton.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+      if (open) sidebar.querySelector("a")?.focus();
     };
     menuButton.addEventListener("click", toggleNavigation);
-    backdrop.addEventListener("click", closeNavigation);
+    backdrop.addEventListener("click", () => closeNavigation(true));
     sidebar.addEventListener("click", (event) => {
       if (event.target.closest("a")) closeNavigation();
     });
+    navigationListenerController = new AbortController();
     document.addEventListener("keydown", (event) => {
-      if (event.key !== "Escape") return;
-      closeNavigation();
-    });
+      if (!document.body.classList.contains("sb-navigation-open")) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeNavigation(true);
+      } else if (event.key === "Tab") {
+        const links = [...sidebar.querySelectorAll("a[href], button, input, select, summary")]
+          .filter((node) => !node.disabled && node.getClientRects().length);
+        const first = links[0];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          backdrop.focus();
+        } else if (!event.shiftKey && document.activeElement === backdrop) {
+          event.preventDefault();
+          first?.focus();
+        } else if (!event.shiftKey && document.activeElement === links.at(-1)) {
+          event.preventDefault();
+          backdrop.focus();
+        } else if (event.shiftKey && document.activeElement === backdrop) {
+          event.preventDefault();
+          links.at(-1)?.focus();
+        }
+      }
+    }, { signal: navigationListenerController.signal });
 
     shell.className = "sb-app-shell";
     shell.replaceChildren(sidebar, topbar, backdrop);

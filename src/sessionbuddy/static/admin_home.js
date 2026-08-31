@@ -5,7 +5,6 @@
 
   const byId = (id) => document.getElementById(id);
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
-  const compactCreateLabel = matchMedia("(max-width: 32rem)");
   const VALID_VIEWS = new Set(["all", "active", "draft", "past"]);
   const VALID_ORDERS = new Set(["upcoming", "recent"]);
   const state = {
@@ -105,7 +104,13 @@
     node.className = `organizer-home-readiness organizer-home-readiness--${tone}${href ? " organizer-home-readiness--link" : ""}`;
     if (href) node.href = href;
     if (accessibleLabel) node.setAttribute("aria-label", accessibleLabel);
-    node.textContent = label;
+    if (href) {
+      const text = document.createElement("span");
+      text.textContent = label;
+      node.append(text);
+    } else {
+      node.textContent = label;
+    }
     return node;
   }
 
@@ -145,7 +150,7 @@
     const status = document.createElement("span");
     status.className = `organizer-home-event-status organizer-home-event-status--${event.status}`;
     status.textContent = eventStatusLabel(event);
-    labels.append(status);
+    nameLine.append(status);
 
     const date = cell("event-column-date", "Dates", "organizer-home-event-date");
     const time = document.createElement("time");
@@ -154,7 +159,7 @@
     time.textContent = formatDate(event);
     date.append(time);
 
-    const program = cell("event-column-program", "Links", "organizer-home-event-program");
+    const program = cell("event-column-program", "Progress", "organizer-home-event-program");
     const cfpStatus = event.cfp_status || "not_started";
     const scheduleStatus = event.schedule_status || "not_started";
     const publicCfpHref = event.status === "active" && event.cfp_public_path && ["published", "closed"].includes(cfpStatus)
@@ -181,7 +186,7 @@
         readinessLabel(agendaLabel, agendaReady ? "ready" : "warning", publicAgendaHref, publicAgendaHref ? `${agendaLabel} — view public agenda for ${event.name}` : ""),
       );
     }
-    identity.append(labels);
+    program.append(labels);
     const links = document.createElement("nav");
     links.className = "organizer-home-event-links";
     links.setAttribute("aria-label", `${event.name} management`);
@@ -191,22 +196,49 @@
       eventLink("Speakers", `/admin/events/${eventId}/speakers`),
       eventLink("Reviewers", `/admin/events/${eventId}/reviewers`),
     );
-    program.append(links);
 
     const actions = cell("event-column-actions", "Actions", "organizer-home-event-actions");
+    const next = document.createElement("a");
+    next.className = "organizer-home-next-action";
+    const pending = Number(event.pending_review_count || 0);
+    const needsReview = event.status !== "archived" && pending > 0;
+    next.classList.toggle("organizer-home-next-action--attention", needsReview);
+    next.href = `/admin/events/${eventId}${needsReview ? "/submissions" : ""}`;
+    next.textContent = needsReview ? `Review ${pending} proposal${pending === 1 ? "" : "s"}` : "Open event";
+    actions.append(next);
+    const tools = document.createElement("details");
+    tools.className = "organizer-home-event-tools";
+    const summary = document.createElement("summary");
+    summary.textContent = "More";
+    summary.setAttribute("aria-label", `More actions for ${event.name}`);
+    const menu = document.createElement("div");
+    menu.className = "organizer-home-event-tools-menu";
+    menu.append(links);
+    tools.append(summary, menu);
+    tools.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      tools.open = false;
+      summary.focus();
+      event.stopPropagation();
+    });
     const settings = document.createElement("a");
     settings.className = "organizer-home-event-action";
     settings.href = `/admin/events/${encodeURIComponent(event.id)}/settings`;
     settings.textContent = "Manage";
-    actions.append(settings);
+    menu.append(settings);
     if (canDuplicateEvent(event)) {
       const duplicate = document.createElement("a");
       duplicate.className = "organizer-home-event-action organizer-home-event-action--clone";
       duplicate.href = `/admin/events/new?source=${encodeURIComponent(event.id)}`;
       duplicate.textContent = "Clone";
-      actions.append(duplicate);
+      menu.append(duplicate);
     }
-    row.append(identity, statusCell, date, program, actions);
+    actions.append(tools);
+    const metadata = document.createElement("div");
+    metadata.className = "organizer-home-event-metadata";
+    metadata.setAttribute("role", "presentation");
+    metadata.append(statusCell, date);
+    row.append(identity, metadata, program, actions);
     return row;
   }
 
@@ -302,7 +334,7 @@
     try {
       const result = await api(`/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/activities`);
       if (requestId !== state.activityRequestId) return;
-      const activities = result.data.slice(0, 8);
+      const activities = result.data.slice(0, 4);
       if (!activities.length) {
         aside.querySelector(".organizer-home-changes-state").textContent = "No recent changes.";
         return;
@@ -343,7 +375,7 @@
     byId("new-event").hidden = !manager;
     byId("new-event").href = `/admin/events/new?organization_id=${encodeURIComponent(state.organizationId)}`;
     byId("new-event").setAttribute("aria-label", `Create event in ${organizationName}`);
-    byId("new-event").textContent = compactCreateLabel.matches ? "Create event" : `Create event in ${organizationName}`;
+    byId("new-event").textContent = "Create event";
     byId("organization-settings").hidden = !manager;
     byId("organization-settings").setAttribute("aria-label", `Organization settings for ${organizationName}`);
     byId("organization-picker").value = state.organizationId;
@@ -412,14 +444,14 @@
       return option;
     }));
     document.body.classList.add("organizer-page--multi-organization");
-    // The compact picker replaces the desktop rail. Keep it populated even for
-    // one organization so responsive layouts never erase organization context.
+    // Keep discovery and switching available even with one current result.
+    // The rail lives in navigation; the compact picker remains on mobile.
     byId("organization-picker-label").hidden = false;
     byId("organization-rail").hidden = false;
     byId("organization-count").textContent = String(organizations.length);
     const totalEvents = organizations.reduce((total, organization) => total + organization.event_count, 0);
     const totalAttention = organizations.reduce((total, organization) => total + organization.pending_review_count, 0);
-    byId("workspace-summary").textContent = `${organizations.length} organization${organizations.length === 1 ? "" : "s"} · ${totalEvents} event${totalEvents === 1 ? "" : "s"} · ${totalAttention} review item${totalAttention === 1 ? "" : "s"} need attention`;
+    byId("workspace-summary").textContent = `${totalEvents} event${totalEvents === 1 ? "" : "s"} · ${totalAttention} review item${totalAttention === 1 ? " needs" : "s need"} attention`;
     renderOrganizationList();
     syncControls();
     await switchOrganization(state.organizationId);
@@ -460,7 +492,6 @@
     const button = event.target.closest("[data-organization-id]");
     if (button && button.dataset.organizationId !== state.organizationId) switchOrganization(button.dataset.organizationId, true);
   });
-  compactCreateLabel.addEventListener("change", syncOrganizationHeader);
   byId("load-more-events").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -478,6 +509,24 @@
     } finally {
       button.disabled = false;
       button.textContent = "Load more";
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    document.querySelectorAll(".organizer-home-event-tools[open]").forEach((menu) => {
+      if (!menu.contains(event.target)) menu.open = false;
+    });
+  }, true);
+
+  const desktopSort = window.matchMedia("(min-width: 641px)");
+  const sortDisclosure = byId("sort-disclosure");
+  const syncSortDisclosure = () => { sortDisclosure.open = desktopSort.matches; };
+  syncSortDisclosure();
+  desktopSort.addEventListener("change", syncSortDisclosure);
+  sortDisclosure.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !desktopSort.matches) {
+      sortDisclosure.open = false;
+      sortDisclosure.querySelector("summary").focus();
     }
   });
 

@@ -10,6 +10,7 @@ const landingCss = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/landing.css"),
   "utf8",
 );
+const productCss = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/product.css"), "utf8");
 const appShellCss = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/app_shell.css"),
   "utf8",
@@ -99,6 +100,9 @@ async function serveConfiguredHomepage(page: import("@playwright/test").Page) {
   });
   await page.route("**/landing/assets/landing.css*", async (route) => {
     await route.fulfill({ contentType: "text/css", body: landingCss });
+  });
+  await page.route("**/product/assets/product.css*", async (route) => {
+    await route.fulfill({ contentType: "text/css", body: productCss });
   });
   await page.route("**/app-shell/assets/app-shell.css*", async (route) => {
     await route.fulfill({ contentType: "text/css", body: appShellCss });
@@ -730,6 +734,11 @@ test.describe("administration empty states", () => {
       status: "active",
     });
     await expect(page).toHaveURL(`/admin/events/${eventId}`);
+    const navigationToggle = page.getByRole("button", { name: "Open navigation" });
+    if ((page.viewportSize()?.width ?? 1440) <= 832) {
+      await expect(navigationToggle).toBeVisible();
+      await navigationToggle.click();
+    }
     await expect(page.getByRole("link", { name: "Settings", exact: true })).toHaveAttribute(
       "href",
       `/admin/events/${eventId}/settings`,
@@ -892,8 +901,12 @@ test.describe("administration empty states", () => {
     await page.route(`**/api/v1/admin/events/${eventId}/cfp`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "Open Source Summit 2026", event_starts_at_ms: Date.UTC(2026, 10, 12, 3, 30), published_form: { slug: "open-source-summit", cover_image_url: "/landing/assets/sessionbuddy-favicon.svg", logo_url: "/landing/assets/sessionbuddy-favicon.svg" } }) }));
 
     await page.goto(`/admin/events/${eventId}`);
-    await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     await expect(page.getByRole("navigation", { name: "Event navigation" })).toBeVisible();
+    const drawerNavigation = page.getByRole("navigation", { name: "Event navigation" });
+    await expect(drawerNavigation.getByRole("link", { name: "Proposals", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/submissions`);
+    await expect(drawerNavigation.getByRole("link", { name: "Speakers" })).toHaveAttribute("href", `/admin/events/${eventId}/speakers`);
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("heading", { name: "Open Source Summit 2026" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Edit event" })).toHaveAttribute("href", `/admin/events/${eventId}/settings`);
     await expect(page.locator(".event-overview-public-preview")).toHaveCount(0);
@@ -903,9 +916,6 @@ test.describe("administration empty states", () => {
     await expect(eventStatus.getByText("0 confirmed", { exact: true })).toBeVisible();
     await expect(eventStatus.getByText("0 sessions", { exact: true })).toBeVisible();
     await expect(eventStatus.getByRole("link", { name: "CFP", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/cfp`);
-    const eventNavigation = page.getByRole("navigation", { name: "Event navigation" });
-    await expect(eventNavigation.getByRole("link", { name: "Proposals", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/submissions`);
-    await expect(eventNavigation.getByRole("link", { name: "Speakers" })).toHaveAttribute("href", `/admin/events/${eventId}/speakers`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
 
@@ -1032,10 +1042,14 @@ test.describe("administration empty states", () => {
     await expect(page.getByLabel("Public CFP URL")).toHaveValue(
       `${new URL(page.url()).origin}/cfp/cccccc/world-fair-2026`,
     );
+    const navigationToggle = page.getByRole("button", { name: "Open navigation" });
+    const mobileNavigation = await navigationToggle.isVisible();
+    if (mobileNavigation) await navigationToggle.click();
     await expect(page.getByRole("navigation", { name: "Event navigation" }).getByRole("link", { name: "Proposals", exact: true })).toHaveAttribute(
       "href",
       `/admin/events/${eventId}/submissions`,
     );
+    if (mobileNavigation) await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Confirmation", exact: true }).click();
     await expect(page.getByLabel("Email subject")).toHaveValue("We received your World Fair proposal");
     await expect(page.getByLabel("Email message")).toHaveValue("Thank you. The program team will review your proposal.");

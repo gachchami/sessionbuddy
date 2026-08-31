@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
   <title id="title">SessionBuddy</title>
   <desc id="desc">A timeline spine with three session rows; the live session runs longest.</desc>
-  <defs><linearGradient id="sb-g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8B3FF5"/><stop offset="1" stop-color="#5D8CFF"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#sb-g)"/><g fill="none" stroke-width="6" stroke-linecap="round"><path d="M16 20V44" stroke="#FFFFFF"/><path d="M30 20H43" stroke="#C9D3FF"/><path d="M30 32H48" stroke="#FFFFFF"/><path d="M30 44H43" stroke="#C9D3FF"/></g>
+  <defs><linearGradient id="sb-g" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#537FAC"/><stop offset="1" stop-color="#18559B"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#sb-g)"/><g fill="none" stroke-width="6" stroke-linecap="round"><path d="M16 20V44" stroke="#FFFFFF"/><path d="M30 20H43" stroke="#C9D3FF"/><path d="M30 32H48" stroke="#FFFFFF"/><path d="M30 44H43" stroke="#C9D3FF"/></g>
 </svg>

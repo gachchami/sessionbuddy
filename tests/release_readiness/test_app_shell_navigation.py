@@ -6,11 +6,12 @@ STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 def test_source_wiring_global_navigation_is_separate_from_the_scrollable_event_navigation() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
-    assert "`sb-sidebar__group sb-sidebar__primary${organizerWorkspace" in javascript
+    assert '"sb-sidebar__group sb-sidebar__primary"' in javascript
     assert '"sb-event-nav"' in javascript
     assert "if (nav.children.length) sidebar.append(primaryGroup);" in javascript
     assert "sidebar.append(eventNav(currentEventId" not in javascript
-    assert "horizontalEventNav" in javascript
+    assert '"sb-sidebar__group sb-sidebar__event"' in javascript
+    assert "eventNav(currentEventId, true)" in javascript
     assert (
         'document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace)' in javascript
     )
@@ -18,26 +19,21 @@ def test_source_wiring_global_navigation_is_separate_from_the_scrollable_event_n
     assert "if (organizationNavigation) {" in javascript
     assert 'navLink("People", "/admin/people"' in javascript
     assert 'navLink("Events", "/admin/events"' not in javascript
-    assert "if (!organizerWorkspace || currentEventId) sidebar.append(brand);" in javascript
+    assert "sidebar.append(brand);" in javascript
     assert 'topbar.classList.add("sb-topbar--event")' in javascript
     assert '["Overview", prefix, "overview"' in javascript
 
 
-def test_source_wiring_event_navigation_stays_in_one_scrollable_row() -> None:
+def test_source_wiring_event_navigation_uses_the_shared_vertical_sidebar() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     event_nav_rule = stylesheet.split(".sb-event-nav {", 1)[1].split("}", 1)[0]
-    assert "justify-content: flex-start;" in event_nav_rule
-    assert "flex-wrap: nowrap;" in event_nav_rule
-    assert "overflow-x: auto;" in event_nav_rule
-    compact_rule = stylesheet.split("@media (max-width: 60rem)", 1)[1]
-    compact_event_nav = compact_rule.split(".sb-event-nav {", 1)[1].split("}", 1)[0]
-    assert "min-height: var(--sb-event-nav-height);" in compact_event_nav
+    assert "display: grid;" in event_nav_rule
+    event_group = stylesheet.split(".sb-sidebar__event {", 1)[1].split("}", 1)[0]
+    assert "overflow-y: auto;" in event_group
 
 
-def test_source_wiring_event_navigation_warms_documents_without_hijacking_links() -> (
-    None
-):
+def test_source_wiring_event_navigation_warms_documents_without_hijacking_links() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
@@ -92,8 +88,9 @@ def test_source_wiring_shell_chrome_is_pinned_across_document_navigations() -> N
     assert "view-transition-name: sessionbuddy-sidebar;" in sidebar_rule
     topbar_rule = stylesheet.split(".sb-topbar {", 1)[1].split("}", 1)[0]
     assert "view-transition-name: sessionbuddy-topbar;" in topbar_rule
-    event_nav_rule = stylesheet.split(".sb-event-nav {", 1)[1].split("}", 1)[0]
-    assert "view-transition-name: sessionbuddy-event-navigation;" in event_nav_rule
+    # Event navigation is now inside the transitioning sidebar, not a second
+    # independently pinned horizontal strip.
+    assert "sessionbuddy-event-navigation" not in stylesheet
 
 
 def test_source_wiring_shell_paints_from_the_cached_session_and_revalidates_in_the_background() -> (
@@ -206,26 +203,18 @@ def test_source_wiring_csp_permits_only_the_inline_speculation_rules_the_shell_e
     assert "'unsafe-inline'" not in security.split("style-src-attr", 1)[0]
 
 
-def test_source_wiring_global_pages_use_the_approved_horizontal_navigation() -> None:
+def test_source_wiring_global_pages_use_the_reference_sidebar() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
-    assert ".sb-shell-global .sb-sidebar { display: none; }" in stylesheet
-    assert ".sb-global-nav" in stylesheet
-    assert ".sb-sidebar__mobile-global { display: none; }" in stylesheet
-    assert ".sb-sidebar__mobile-global { display: block; }" in stylesheet
-    global_nav_rule = stylesheet.split(".sb-global-nav {", 1)[1].split("}", 1)[0]
-    active_rule = stylesheet.split('.sb-global-nav a[aria-current="page"] {', 1)[1].split("}", 1)[0]
-    assert "border:" not in global_nav_rule
-    assert "border-radius:" not in global_nav_rule
-    assert "background:" not in global_nav_rule
+    assert ".sb-shell-global .sb-sidebar { display: none; }" not in stylesheet
+    sidebar = stylesheet.split(".sb-sidebar {", 1)[1].split("}", 1)[0]
+    assert "border-radius:" in sidebar
+    assert "background:" in sidebar
+    active_rule = stylesheet.split('.sb-sidebar__nav a[aria-current="page"] {', 1)[1].split("}", 1)[
+        0
+    ]
     assert "linear-gradient" not in active_rule
-    assert '.sb-global-nav a[aria-current="page"]::after' in stylesheet
-    account_rule = stylesheet.split(".sb-account summary {", 1)[1].split("}", 1)[0]
-    assert "border: 1px solid" in account_rule
-    primary_rule = stylesheet.split(".sb-sidebar__primary {", 1)[1].split("}", 1)[0]
-    assert "border:" in primary_rule
-    assert "border-radius:" in primary_rule
-    assert "background:" in primary_rule
+    assert "background:" in active_rule
 
 
 def test_source_wiring_account_menu_layer_stays_above_workflow_content() -> None:
@@ -259,9 +248,9 @@ def test_source_wiring_zero_link_account_shell_collapses_the_empty_navigation() 
         'const hasSidebarNavigation = Boolean(sidebar.querySelector(".sb-sidebar__nav a"));'
         in javascript
     )
-    assert '|| section === "reviews" || !hasSidebarNavigation;' in javascript
+    assert "const topbarOnlyWorkspace = !hasSidebarNavigation;" in javascript
     assert '} else if (!hasSidebarNavigation || section === "reviews") {' in javascript
-    assert "topbar.append(accountBrand, crumb, accountMenu(session, roles));" in javascript
+    assert "topbar.append(accountBrand, crumb, account);" in javascript
     assert "if (topbarOnlyWorkspace) {" in javascript
 
 
@@ -274,12 +263,14 @@ def test_account_brand_wiring_uses_the_active_role_destination() -> None:
     assert "roleDestination" not in javascript
 
 
-def test_source_wiring_single_speaker_workspace_has_no_one_item_navigation() -> None:
+def test_source_wiring_single_speaker_workspace_retains_role_navigation() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     assert 'const singleSpeakerWorkspace = roles.size === 1 && roles.has("speaker")' in javascript
-    assert "shell.replaceChildren(...[topbar, horizontalEventNav].filter(Boolean));" in javascript
+    assert "shell.replaceChildren(topbar);" in javascript
+    assert 'navLink("Speaker portal", "/speaker"' in javascript
+    assert 'navLink("Calls for proposals", "/speaker#calls"' in javascript
     assert 'speakerBrand = link("", activeDestination)' in javascript
     assert 'document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace)' in javascript
     assert ".sb-shell-single .sb-topbar {" in stylesheet
@@ -294,9 +285,7 @@ def test_source_wiring_account_navigation_exposes_one_active_role_and_role_switc
     assert "` · ${roleLabel(active.role)}`" in javascript
 
 
-def test_source_wiring_account_settings_uses_shell_without_polluting_navigation() -> (
-    None
-):
+def test_source_wiring_account_settings_uses_shell_without_polluting_navigation() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
@@ -310,7 +299,8 @@ def test_source_wiring_account_settings_uses_shell_without_polluting_navigation(
     )
     assert 'globalNav.append(navLink("Speaker portal", "/speaker", "mic"' not in javascript
     assert 'globalNav.append(navLink("My reviews", "/reviews", "review"' not in javascript
-    assert "topbar.append(topbarBrand, globalNav, accountMenu(session, roles));" in javascript
+    assert "topbar.append(topbarBrand, globalNav, account);" in javascript
+    assert javascript.count("const account = accountMenu(session, roles);") == 1
     assert 'make("p", "Switch role", "sb-role-switcher__label")' in javascript
     assert 'make("p", "Account", "sb-account__menu-title")' in javascript
     assert 'switcher.setAttribute("role", "group")' in javascript
@@ -344,7 +334,7 @@ def test_source_wiring_single_speaker_shell_has_no_redundant_page_heading() -> N
         '} else if (!hasSidebarNavigation || section === "reviews") {', 1
     )[0]
     assert "crumb" not in branch
-    assert "topbar.append(speakerBrand, accountMenu(session, roles));" in branch
+    assert "topbar.append(speakerBrand, account);" in branch
 
 
 def test_source_wiring_landing_uses_one_role_aware_dashboard_entry() -> None:
@@ -368,9 +358,7 @@ def test_source_wiring_landing_uses_one_role_aware_dashboard_entry() -> None:
     assert "location.replace(destination)" in javascript
 
 
-def test_source_wiring_unknown_active_role_fails_closed_without_destination_guess() -> (
-    None
-):
+def test_source_wiring_unknown_active_role_fails_closed_without_destination_guess() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     active_role = javascript.split("function activeRole(session)", 1)[1].split(
@@ -382,7 +370,7 @@ def test_source_wiring_unknown_active_role_fails_closed_without_destination_gues
     assert "supportedRoles.has(requested)" in active_role
     assert "return roleChoices(session).find" in active_role
 
-    assert "const roleless = session.workspace_state === \"roleless\"" in javascript
+    assert 'const roleless = session.workspace_state === "roleless"' in javascript
     assert 'return location.pathname === "/calls" || location.pathname === "/account"' in javascript
     assert "const rolelessNeutral = roleless && isPersonaNeutralPath()" in javascript
     assert 'session.workspace_state === "active_role_invalid"' in javascript
@@ -486,7 +474,9 @@ def test_source_wiring_only_event_navigation_scrolls_inside_the_sidebar_on_all_v
     assert "overscroll-behavior: contain" in event_rule
 
     mobile_rules = stylesheet.split("@media (max-width: 52rem)", 1)[1]
-    assert ".sb-sidebar { transform:" in mobile_rules
+    mobile_sidebar = mobile_rules.split(".sb-sidebar {", 1)[1].split("}", 1)[0]
+    assert "transform:" in mobile_sidebar
+    assert "visibility: hidden" in mobile_sidebar
     assert ".sb-sidebar { overflow" not in mobile_rules
 
 
@@ -506,8 +496,7 @@ def test_source_wiring_every_organizer_persona_reaches_a_navigable_workspace() -
     # reconstructing organization authority in the browser.
     assert 'choice.role === "organizer"' in javascript
     assert (
-        "const organizationNavigation = !onboardingLocked && hasOrganizerWorkspace;"
-        in javascript
+        "const organizationNavigation = !onboardingLocked && hasOrganizerWorkspace;" in javascript
     )
     assert "managesAnyOrganization" not in javascript
     assert "if (organizationNavigation) {" in javascript

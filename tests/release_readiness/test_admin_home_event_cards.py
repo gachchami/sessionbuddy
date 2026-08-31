@@ -83,7 +83,7 @@ def test_source_wiring_home_recent_changes_is_manager_only_and_uses_shared_forma
     assert "if (!canManage)" in script
     assert "slot.replaceChildren();" in script
     assert 'activity.operation !== "read"' not in script
-    assert ".slice(0, 8)" in script
+    assert ".slice(0, 4)" in script
     assert "window.SessionBuddyActivityFormat.sentence(activity)" in script
     assert "No recent changes." in script
     assert "Recent changes are temporarily unavailable." in script

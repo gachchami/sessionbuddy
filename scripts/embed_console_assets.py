@@ -195,10 +195,19 @@ CONTENT_ADDRESSED_CSS_ASSETS = (
     ),
 )
 SHARED_ASSET_VERSIONS = {
-    "/product/assets/product.css": "90",
-    "/app-shell/assets/app-shell.css": "27",
+    "/product/assets/product.css": "91",
+    "/app-shell/assets/app-shell.css": "28",
     "/app-shell/assets/api-client.js": "10",
-    "/app-shell/assets/app-shell.js": "35",
+    "/app-shell/assets/app-shell.js": "38",
+    "/landing/assets/landing.css": "15",
+    "/admin/onboarding/assets/onboarding.css": "5",
+    "/admin/agenda/assets/agenda.css": "7",
+    "/docs/assets/api-docs.css": "3",
+    "/engine-room/assets/console.css": "engine-room-2",
+    "/app-shell/assets/error-page.css": "4",
+    "/schedule/assets/schedule.css": "14",
+    "/setup/assets/setup.css": "7",
+    "/speaker/assets/speaker.css": "27",
 }
 
 

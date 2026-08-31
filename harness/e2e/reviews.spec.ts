@@ -56,7 +56,7 @@ test.describe("reviewer workspace", () => {
 
     // Non-organizer portals do not render an empty Main navigation card.
     await expect(page.locator(".sb-sidebar__primary")).toHaveCount(0);
-    await expect(page.locator(".sb-sidebar")).toHaveCount(0);
+    await expect(page.locator('.sb-sidebar__nav a[href="/reviews"]')).toHaveCount(1);
     await expect(page.locator(".sb-account__identity strong")).toHaveText("Rhea Reviewer · Reviewer");
 
     // The accessibility link is visually clipped until keyboard focus.
@@ -114,7 +114,7 @@ test.describe("reviewer workspace", () => {
     await expect(page.getByText("Assigned after the round closed · no original deadline")).toBeVisible();
     await expect(page.getByText(/^Due /)).toHaveCount(0);
     await expect(page.getByRole("group", { name: "Scorecard" })).toHaveCount(0);
-    await expect(page.locator(".sb-sidebar")).toHaveCount(0);
+    await expect(page.locator('.sb-sidebar__nav a[href="/reviews"]')).toHaveCount(1);
 
     await page.getByRole("button", { name: "Open review" }).click();
     await expect(page.getByRole("note")).toContainText("original deadline no longer applies");

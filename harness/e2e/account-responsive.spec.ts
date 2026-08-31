@@ -160,11 +160,13 @@ test.describe("account profile responsive design", () => {
     const viewportPadding = await page.evaluate(() =>
       Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop),
     );
-    expect(viewportPadding).toBeCloseTo(88, 3); // 5.5rem mobile shell chrome.
+    const chrome = await page.locator(".sb-topbar").boundingBox();
+    expect(chrome).not.toBeNull();
+    expect(viewportPadding).toBeGreaterThanOrEqual(chrome!.y + chrome!.height);
 
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await expect(page.locator("#workspace-navigation")).toHaveCount(1);
-    await expect(page.locator(".sb-topbar").getByRole("link", { name: "SessionBuddy" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Speaker portal" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "My reviews" })).toHaveCount(0);
     await expect(page.getByText("Your account is up to date.")).toHaveCount(0);
@@ -356,7 +358,7 @@ test.describe("account profile responsive design", () => {
       last_name: "Hanushali",
       version: 1,
     });
-    await expect(page.locator(".sb-topbar").getByRole("link", { name: "SessionBuddy" }))
+    await expect(page.locator(".sb-sidebar .sb-app-brand"))
       .toHaveAttribute("href", "/admin");
   });
 

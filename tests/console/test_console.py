@@ -31,7 +31,7 @@ async def test_console_is_semantic_accessible_and_labels_synthetic(console_app: 
     assert 'id="content"' in html
     assert 'role="status"' in html
     assert "Synthetic / local" in html
-    assert "console.css?v=engine-room-1" in html
+    assert "console.css?v=engine-room-2" in html
     assert "console.js?v=engine-room-1" in html
     assert "<h1>Engine Room</h1>" in html
     assert 'id="build-progress"' in html

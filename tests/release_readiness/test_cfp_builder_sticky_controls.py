@@ -108,12 +108,12 @@ def test_form_outline_and_add_question_bar_remain_in_normal_flow() -> None:
     assert _value(actions, "position") == "static"
 
 
-def test_app_shell_publishes_its_chrome_height() -> None:
+def test_source_wiring_app_shell_publishes_its_chrome_height() -> None:
     styles = (STATIC / "app_shell.css").read_text()
 
     assert "--sb-chrome-top" in styles
     event_rules = _rules_defining(
-        styles, "--sb-chrome-top", selector_contains="sb-shell-event"
+        styles, "--sb-chrome-top", selector_contains="html:has"
     )
     event_shell = " ".join(declarations for _, declarations in event_rules)
     assert any(_is_root_scoped(selector) for selector, _ in event_rules)

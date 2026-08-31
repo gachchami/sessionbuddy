@@ -144,15 +144,20 @@ async def test_missing_role_uses_discovery_and_unknown_role_uses_neutral_recover
     )
 
 
-async def test_landing_page_styles_are_embedded(client: AsyncClient) -> None:
+async def test_landing_page_style_packaging_includes_shared_accessibility_rules(
+    client: AsyncClient,
+) -> None:
     response = await client.get("/landing/assets/landing.css")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/css")
     assert response.headers["cache-control"] == "public, max-age=300"
     assert ".hero-grid" in response.text
-    assert "focus-visible" in response.text
-    assert "prefers-reduced-motion" in response.text
+    assert '@import url("/product/assets/product.css?v=' in response.text
+    shared = await client.get("/product/assets/product.css")
+    assert shared.status_code == 200
+    assert "focus-visible" in shared.text
+    assert "prefers-reduced-motion" in shared.text
 
 
 async def test_invalid_request_id_is_replaced(client: AsyncClient) -> None:

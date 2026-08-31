@@ -106,8 +106,9 @@ type in the brand typeface, use Manrope and outline it before committing.
 
 ## Product typography
 
-Product UI uses the operating-system sans-serif stack declared by `--font-ui`.
-Its fixed type scale is 12, 13, 14, 16, 18, 22, 28, 36, and 48 pixels. The
+Product UI uses locally bundled DM Sans with operating-system sans-serif fallbacks
+declared by `--font-ui`.
+Its fixed type scale is 12, 13, 14, 16, 18, 20, 22, 24, 28, 36, and 48 pixels. The
 13-pixel step is reserved for dense operational metadata; ordinary body copy
 uses 14 or 16 pixels, and interactive text inputs remain at least 16 pixels to
 avoid mobile browser zoom. Supported weights are 400, 500, 600, 700, and 800.

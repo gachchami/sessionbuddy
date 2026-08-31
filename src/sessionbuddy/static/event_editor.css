@@ -6,13 +6,13 @@
 .event-editor__source h2, .event-editor__source p { margin-block: 0; }
 .event-editor__source details { grid-column: 1 / -1; }
 .event-editor__source details p { margin-block: .75rem 0; max-inline-size: 72ch; }
-.event-editor__layout { display: grid; grid-template-columns: minmax(0, 46rem) minmax(16rem, 22rem); align-items: start; gap: 2rem; }
-.event-editor__main, .event-editor__support { display: grid; gap: 2rem; }
-.event-editor__section { margin: 0; padding-block: 0 2rem; border: 0; border-bottom: 1px solid var(--border-default); }
+.event-editor__layout { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(16rem, 1fr); align-items: start; gap: 1.25rem; }
+.event-editor__main, .event-editor__support { min-width: 0; display: grid; gap: 1.25rem; }
+.event-editor__section { margin: 0; padding: clamp(1rem, 2vw, 1.5rem); border: 1px solid var(--border-default); border-radius: 1rem; background: white; }
 .event-editor__section h2 { margin-block: 0 1rem; font-size: 1.125rem; }
 .event-editor__section label { display: grid; gap: .5rem; margin-block: 1rem; }
 .event-editor__section input, .event-editor__section textarea, .event-editor__section select { font-size: 1rem; }
-.event-editor__date-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.event-editor__date-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .event-editor__date-grid fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 0; padding: 1rem; border: 1px solid var(--border-default); border-radius: .75rem; }
 .event-editor__date-grid legend { padding-inline: .3rem; font-size: .875rem; font-weight: 700; }
 .event-editor__optional > summary { min-block-size: 2.75rem; cursor: pointer; list-style-position: outside; }

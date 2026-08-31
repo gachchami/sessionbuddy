@@ -20,7 +20,7 @@ ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 STYLESHEETS = sorted(STATIC.glob("*.css")) + sorted((STATIC / "app" / "assets").glob("*.css"))
 
-SCALE_PX = frozenset({12, 13, 14, 16, 18, 22, 28, 36, 48})
+SCALE_PX = frozenset({12, 13, 14, 16, 18, 20, 22, 24, 28, 36, 48})
 WEIGHTS = frozenset({"400", "500", "600", "700", "800"})
 MINIMUM_PX = 12
 # iOS Safari zooms the viewport when a focusable text field is smaller than

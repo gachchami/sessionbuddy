@@ -5,7 +5,7 @@ STATIC = Path("src/sessionbuddy/static")
 REVIEW_SOURCE = Path("frontend/src/styles.css")
 
 SHARED_TOKENS = {
-    "action-primary": "#6d4aff",
+    "action-primary": "#225c9e",
     "focus-ring": "#2563eb",
 }
 
@@ -19,7 +19,7 @@ def _custom_property(css: str, name: str) -> str | None:
     return match.group(1).strip().lower() if match else None
 
 
-def test_product_facing_surfaces_share_action_and_focus_meanings() -> None:
+def test_source_wiring_product_surfaces_share_action_and_focus_tokens() -> None:
     stylesheets = {
         "product": _css("product.css"),
         "app shell": _css("app_shell.css"),
@@ -30,15 +30,23 @@ def test_product_facing_surfaces_share_action_and_focus_meanings() -> None:
 
     for surface, css in stylesheets.items():
         for token, value in SHARED_TOKENS.items():
-            assert _custom_property(css, token) == value, (
-                f"{surface} must give --{token} the shared {value} meaning"
-            )
+            # Landing imports the product sheet; React's HTML loads it before
+            # its bundle. Inheritance is intentional, not a missing declaration.
+            declared = _custom_property(css, token)
+            if declared is None:
+                if surface == "landing":
+                    assert '@import url("/product/assets/product.css?v=' in css
+                else:
+                    assert surface in {"review source", "reviews"}
+                    assert (
+                        "/product/assets/product.css?v=" in (STATIC / "app/index.html").read_text()
+                    )
+                declared = _custom_property(stylesheets["product"], token)
+            assert declared == value, f"{surface} must give --{token} the shared {value} meaning"
 
-    assert "var(--action-primary)" in stylesheets["landing"]
     assert "var(--action-primary)" in stylesheets["reviews"]
     assert "var(--action-primary)" in stylesheets["app shell"]
     assert "var(--focus-ring)" in stylesheets["product"]
-    assert "var(--focus-ring)" in stylesheets["landing"]
     assert "var(--focus-ring)" in stylesheets["reviews"]
     assert "--blue:" not in stylesheets["landing"]
     assert "--blue:" not in stylesheets["review source"]
