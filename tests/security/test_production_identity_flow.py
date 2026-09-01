@@ -567,7 +567,7 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         assert "Set up SessionBuddy" not in closed_setup.text
         configured_home = await client.get("/", follow_redirects=False)
         assert configured_home.status_code == 200
-        assert "From open call to published agenda." in configured_home.text
+        assert "Open source software that manages your events." in configured_home.text
         assert connection.execute(
             "SELECT COUNT(*) FROM instance_setup WHERE singleton_key='primary'"
         ).fetchone()[0] == 1

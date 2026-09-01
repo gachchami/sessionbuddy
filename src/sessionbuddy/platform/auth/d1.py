@@ -1,6 +1,5 @@
 """D1 adapters for live sessions and authorization facts."""
 
-from collections.abc import Sequence
 
 from sessionbuddy.platform.authorization.types import (
     Actor,
@@ -9,9 +8,15 @@ from sessionbuddy.platform.authorization.types import (
     ResourceGrant,
     Role,
 )
-from sessionbuddy.platform.db.d1 import result_rows, to_python
+from sessionbuddy.platform.db.d1 import result_rows
 
-from .sessions import SessionRecord
+from .sessions import SessionRecord, validate_session
+
+# Sliding-idle bookkeeping: a live session is extended at most once per
+# interval, and each extension grants this much idle time (capped by the
+# absolute expiry).
+SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000
+SESSION_IDLE_EXTENSION_MS = 12 * 60 * 60 * 1000
 
 
 class D1SessionStore:
@@ -19,35 +24,59 @@ class D1SessionStore:
         self._db = db
 
     async def resolve(self, token_hash: bytes, now_ms: int) -> SessionRecord | None:
-        selected = self._db.prepare(
-            """SELECT s.id, s.user_id, u.status AS user_status,
+        rows = result_rows(
+            await self._db.prepare(
+                """SELECT s.id, s.user_id, u.status AS user_status,
                           s.authorization_version, u.authorization_version
                             AS current_authorization_version,
-                          s.idle_expires_at_ms, s.absolute_expires_at_ms, s.revoked_at_ms
+                          s.idle_expires_at_ms, s.absolute_expires_at_ms,
+                          s.revoked_at_ms, s.last_seen_at_ms
                    FROM sessions s JOIN users u ON u.id = s.user_id
                    WHERE s.token_hash = ?1 LIMIT 1"""
-        ).bind(token_hash)
-        # Extend a genuinely active session at most once every five minutes.
-        # The SELECT and conditional touch share one D1 batch/round trip, so
-        # correct sliding-idle semantics do not add another network waterfall.
-        touched = self._db.prepare(
-            """UPDATE sessions
-               SET last_seen_at_ms=?1,
-                   idle_expires_at_ms=MIN(?2,absolute_expires_at_ms)
-               WHERE token_hash=?3 AND revoked_at_ms IS NULL
-                 AND idle_expires_at_ms>?1 AND absolute_expires_at_ms>?1
-                 AND last_seen_at_ms<=?4
-                 AND EXISTS (
-                   SELECT 1 FROM users u
-                   WHERE u.id=sessions.user_id AND u.status='active'
-                     AND u.authorization_version=sessions.authorization_version
-                 )"""
-        ).bind(now_ms, now_ms + 12 * 60 * 60 * 1000, token_hash, now_ms - 5 * 60 * 1000)
-        batch = to_python(await self._db.batch([selected, touched]))
-        first_result = batch[0] if isinstance(batch, Sequence) and batch else None
-        rows = result_rows(first_result) if first_result is not None else []
+            )
+            .bind(token_hash)
+            .all()
+        )
         row = rows[0] if rows else None
-        return SessionRecord(**row) if row is not None else None
+        if row is None:
+            return None
+        last_seen_at_ms = row.pop("last_seen_at_ms", None)
+        record = SessionRecord(**row)
+        # Reads dominate authenticated traffic. Issuing the touch only when it
+        # is due keeps every other request free of a write statement: an
+        # unconditional UPDATE in the same batch took a write lock per request
+        # and surfaced as SQLITE_BUSY under the concurrent page loads a single
+        # browser produces against SQLite-backed local D1.
+        touch_due = (
+            isinstance(last_seen_at_ms, (int, float))
+            and last_seen_at_ms <= now_ms - SESSION_TOUCH_INTERVAL_MS
+        )
+        if touch_due and validate_session(record, now_ms).active:
+            # The predicates repeat the activity checks so a session revoked or
+            # expired between the read and this write is never extended.
+            await (
+                self._db.prepare(
+                    """UPDATE sessions
+                       SET last_seen_at_ms=?1,
+                           idle_expires_at_ms=MIN(?2,absolute_expires_at_ms)
+                       WHERE token_hash=?3 AND revoked_at_ms IS NULL
+                         AND idle_expires_at_ms>?1 AND absolute_expires_at_ms>?1
+                         AND last_seen_at_ms<=?4
+                         AND EXISTS (
+                           SELECT 1 FROM users u
+                           WHERE u.id=sessions.user_id AND u.status='active'
+                             AND u.authorization_version=sessions.authorization_version
+                         )"""
+                )
+                .bind(
+                    now_ms,
+                    now_ms + SESSION_IDLE_EXTENSION_MS,
+                    token_hash,
+                    now_ms - SESSION_TOUCH_INTERVAL_MS,
+                )
+                .run()
+            )
+        return record
 
     async def revoke(self, session_id: str, reason: str, now_ms: int) -> bool:
         result = (

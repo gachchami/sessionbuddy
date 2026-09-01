@@ -462,6 +462,10 @@ async def create_admin_invitation(
     try:
         await batch.execute()
     except PersistenceError as exc:
+        # The expire-then-reissue path is guarded: a concurrent revoke between
+        # the read and this batch is an ordinary conflict, not a server fault.
+        if guarded_failure(exc):
+            fail("invitation_changed")
         # A racing creator may have committed first. Re-enter only when that
         # specific pending recipient now exists; unrelated DB errors stay errors.
         if "UNIQUE constraint failed" not in str(exc.__cause__):
