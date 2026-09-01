@@ -298,7 +298,12 @@ def test_bootstrap_bundle_restores_complete_credential_with_explicit_columns(
                 return [{"success": True, "results": [{"name": key} for key in row]}]
             if f'FROM "{table}" ' in sql:
                 return [{"success": True, "results": [row]}]
-        for table in ("people", "user_headshots", "owned_resources"):
+        for table in (
+            "people",
+            "user_headshots",
+            "owned_resources",
+            "resource_access_grants",
+        ):
             if sql.startswith(f'PRAGMA table_info("{table}")'):
                 return [{"success": True, "results": [{"name": "id"}]}]
             if f'FROM "{table}" ' in sql:
@@ -315,6 +320,108 @@ def test_bootstrap_bundle_restores_complete_credential_with_explicit_columns(
         "('user-1','$argon2id$fixture-salt-and-verifier',2,'active');"
     ) in sql
     assert "BEGIN TRANSACTION" not in sql
+
+
+def test_retained_admin_set_scopes_every_identity_predicate() -> None:
+    dana = "c2c12e5e-2cea-5d9a-bf7f-dc5dc012e2b4"
+    jordan = "c948a37b-5c65-419d-8a2a-244c22279777"
+
+    predicates = dict(reset_module.retained_admin_predicates((dana, jordan)))
+
+    for table in (
+        "organizations",
+        "users",
+        "password_credentials",
+        "organization_memberships",
+        "user_roles",
+        "people",
+        "user_headshots",
+        "owned_resources",
+        "resource_access_grants",
+    ):
+        assert dana in predicates[table]
+        assert jordan in predicates[table]
+    assert predicates["instance_setup"] == "singleton_key='primary'"
+
+
+def test_retained_admin_set_must_be_unique_canonical_uuids() -> None:
+    dana = "c2c12e5e-2cea-5d9a-bf7f-dc5dc012e2b4"
+
+    with pytest.raises(ResetError, match="non-empty and unique"):
+        reset_module.retained_admin_predicates((dana, dana))
+    with pytest.raises(ResetError, match="canonical UUIDs"):
+        reset_module.retained_admin_predicates(("not-a-user-id",))
+
+
+def test_bootstrap_shape_accepts_only_the_explicit_two_admin_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dana = "c2c12e5e-2cea-5d9a-bf7f-dc5dc012e2b4"
+    jordan = "c948a37b-5c65-419d-8a2a-244c22279777"
+    observed_sql = ""
+
+    def fake_execute(environment_name: str, sql: str, *, local: bool = False) -> list[dict]:
+        nonlocal observed_sql
+        del environment_name, local
+        observed_sql = sql
+        return [
+            {
+                "success": True,
+                "results": [
+                    {
+                        "organizations": 1,
+                        "bootstrap_users": 2,
+                        "active_admin_memberships": 2,
+                        "active_organizer_roles": 2,
+                        "bootstrap_password_credentials": 2,
+                        "manageable_organizers": 2,
+                        "completed_setups": 1,
+                        "bootstrapped_at_ms": 123,
+                    }
+                ],
+            }
+        ]
+
+    monkeypatch.setattr(reset_module, "execute_sql", fake_execute)
+
+    reset_module.assert_bootstrap_shape("dev", local=False, retained_admin_user_ids=(dana, jordan))
+
+    assert observed_sql.count(dana) == 5
+    assert observed_sql.count(jordan) == 5
+
+
+def test_bootstrap_shape_rejects_retained_admin_without_workspace_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dana = "c2c12e5e-2cea-5d9a-bf7f-dc5dc012e2b4"
+    jordan = "c948a37b-5c65-419d-8a2a-244c22279777"
+
+    def fake_execute(environment_name: str, sql: str, *, local: bool = False) -> list[dict]:
+        del environment_name, sql, local
+        return [
+            {
+                "success": True,
+                "results": [
+                    {
+                        "organizations": 1,
+                        "bootstrap_users": 2,
+                        "active_admin_memberships": 2,
+                        "active_organizer_roles": 2,
+                        "bootstrap_password_credentials": 2,
+                        "manageable_organizers": 1,
+                        "completed_setups": 1,
+                        "bootstrapped_at_ms": 123,
+                    }
+                ],
+            }
+        ]
+
+    monkeypatch.setattr(reset_module, "execute_sql", fake_execute)
+
+    with pytest.raises(ResetError, match="manageable_organizers=1"):
+        reset_module.assert_bootstrap_shape(
+            "dev", retained_admin_user_ids=(dana, jordan)
+        )
 
 
 def test_deletion_order_removes_children_before_parents() -> None:

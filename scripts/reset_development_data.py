@@ -26,6 +26,7 @@ CANONICAL_BASELINE = PROJECT_ROOT / "migrations_baseline" / "0001_baseline.sql"
 MIGRATION_NAME = re.compile(r"^[0-9]{4}_[a-z0-9_]+\.sql$")
 NPX = shutil.which("npx") or "/usr/local/bin/npx"
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+USER_ID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 REFERENCE = re.compile(r"\bREFERENCES\s+[\"`\[]?([A-Za-z_][A-Za-z0-9_]*)", re.I)
 
 # These rows are the minimum viable bootstrap identity bundle. Tables with
@@ -39,7 +40,7 @@ PRESERVED_TABLES = {
     "user_roles",
     "users",
 }
-CONDITIONAL_TABLES = {"owned_resources", "people"}
+CONDITIONAL_TABLES = {"owned_resources", "people", "resource_access_grants"}
 SYSTEM_TABLES = {"_cf_KV", "_cf_METADATA", "d1_migrations", "sqlite_sequence"}
 LOCAL_SYSTEM_TABLES = SYSTEM_TABLES
 BOOTSTRAP_TABLES = (
@@ -84,8 +85,55 @@ BOOTSTRAP_TABLES = (
         "(SELECT user_id FROM organization_memberships "
         "WHERE role='organization_admin' AND status='active')",
     ),
+    (
+        "resource_access_grants",
+        "permission='manage' AND status='active' AND user_id IN "
+        "(SELECT user_id FROM organization_memberships "
+        "WHERE role='organization_admin' AND status='active')",
+    ),
     ("instance_setup", "singleton_key='primary'"),
 )
+
+
+def retained_admin_predicates(user_ids: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
+    if not user_ids or len(set(user_ids)) != len(user_ids):
+        raise ResetError("retained administrator user IDs must be non-empty and unique")
+    invalid = [user_id for user_id in user_ids if USER_ID.fullmatch(user_id) is None]
+    if invalid:
+        raise ResetError("retained administrator user IDs must be canonical UUIDs")
+    selected = ",".join(f"'{user_id}'" for user_id in user_ids)
+    return (
+        (
+            "organizations",
+            "id IN (SELECT organization_id FROM organization_memberships "  # noqa: S608
+            f"WHERE role='organization_admin' AND status='active' "
+            f"AND user_id IN ({selected}))",  # noqa: S608 - UUIDs validated above.
+        ),
+        ("users", f"id IN ({selected})"),
+        (
+            "password_credentials",
+            f"status='active' AND user_id IN ({selected})",
+        ),
+        (
+            "organization_memberships",
+            f"role='organization_admin' AND status='active' AND user_id IN ({selected})",
+        ),
+        (
+            "user_roles",
+            f"role='organizer' AND status='active' AND user_id IN ({selected})",
+        ),
+        ("people", f"user_id IN ({selected})"),
+        ("user_headshots", f"user_id IN ({selected})"),
+        (
+            "owned_resources",
+            f"resource_type='organization' AND owner_user_id IN ({selected})",
+        ),
+        (
+            "resource_access_grants",
+            f"permission='manage' AND status='active' AND user_id IN ({selected})",
+        ),
+        ("instance_setup", "singleton_key='primary'"),
+    )
 
 
 class ResetError(RuntimeError):
@@ -171,9 +219,7 @@ def first_results(payload: list[dict]) -> list[dict]:
 def run_checked(arguments: list[str], *, timeout: int = 300) -> str:
     result = run_wrangler(arguments, timeout=timeout)
     if result.returncode != 0:
-        detail = "\n".join(
-            part.strip() for part in (result.stdout, result.stderr) if part.strip()
-        )
+        detail = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
         raise ResetError(detail or "Wrangler command failed without diagnostic output")
     return result.stdout
 
@@ -192,13 +238,20 @@ def table_columns(environment_name: str, table: str, *, local: bool) -> list[str
     return columns
 
 
-def bootstrap_insert_sql(environment_name: str, *, local: bool) -> str:
+def bootstrap_insert_sql(
+    environment_name: str, *, local: bool, retained_admin_user_ids: tuple[str, ...] = ()
+) -> str:
     statements: list[str] = []
-    for table, where in BOOTSTRAP_TABLES:
+    tables = (
+        retained_admin_predicates(retained_admin_user_ids)
+        if retained_admin_user_ids
+        else BOOTSTRAP_TABLES
+    )
+    expected_count = len(retained_admin_user_ids) if retained_admin_user_ids else 1
+    for table, where in tables:
         columns = table_columns(environment_name, table, local=local)
         projections = ",".join(
-            f"quote({quote_identifier(column)}) AS {quote_identifier(column)}"
-            for column in columns
+            f"quote({quote_identifier(column)}) AS {quote_identifier(column)}" for column in columns
         )
         rows = first_results(
             execute_sql(
@@ -208,16 +261,22 @@ def bootstrap_insert_sql(environment_name: str, *, local: bool) -> str:
                 local=local,
             )
         )
-        if table in {
-            "organizations",
-            "users",
-            "password_credentials",
-            "organization_memberships",
-            "user_roles",
-            "instance_setup",
-        } and len(rows) != 1:
+        required_count = 1 if table in {"organizations", "instance_setup"} else expected_count
+        if (
+            table
+            in {
+                "organizations",
+                "users",
+                "password_credentials",
+                "organization_memberships",
+                "user_roles",
+                "instance_setup",
+            }
+            and len(rows) != required_count
+        ):
             raise ResetError(
-                f"bootstrap export expected exactly one {table} row; found {len(rows)}"
+                f"bootstrap export expected exactly {required_count} {table} rows; "
+                f"found {len(rows)}"
             )
         column_sql = ",".join(quote_identifier(column) for column in columns)
         for row in rows:
@@ -225,9 +284,7 @@ def bootstrap_insert_sql(environment_name: str, *, local: bool) -> str:
             for column in columns:
                 value = row.get(column)
                 if not isinstance(value, str) or not value:
-                    raise ResetError(
-                        f"bootstrap export could not quote {table}.{column} safely"
-                    )
+                    raise ResetError(f"bootstrap export could not quote {table}.{column} safely")
                 values.append(value)
             statements.append(
                 f"INSERT INTO {quote_identifier(table)} ({column_sql}) "  # noqa: S608
@@ -237,18 +294,23 @@ def bootstrap_insert_sql(environment_name: str, *, local: bool) -> str:
 
 
 def write_bootstrap_bundle(
-    environment_name: str, database_name: str, *, local: bool
+    environment_name: str,
+    database_name: str,
+    *,
+    local: bool,
+    retained_admin_user_ids: tuple[str, ...] = (),
 ) -> tuple[Path, str]:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     target = "local" if local else "remote"
     destination = (
-        PROJECT_ROOT
-        / ".local"
-        / "backups"
-        / f"{database_name}-{target}-bootstrap-{stamp}.sql"
+        PROJECT_ROOT / ".local" / "backups" / f"{database_name}-{target}-bootstrap-{stamp}.sql"
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    content = bootstrap_insert_sql(environment_name, local=local)
+    content = bootstrap_insert_sql(
+        environment_name,
+        local=local,
+        retained_admin_user_ids=retained_admin_user_ids,
+    )
     destination.write_text(content, encoding="utf-8")
     destination.chmod(0o600)
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -297,48 +359,71 @@ def validate_configuration(config: Path, *, local: bool = False) -> str:
         expected = " or ".join(sorted(allowed))
         raise ResetError(f"{target} reset requires APP_ENV to be {expected}")
     databases = [
-        item
-        for item in environment.get("d1_databases", [])
-        if item.get("binding") == "DB"
+        item for item in environment.get("d1_databases", []) if item.get("binding") == "DB"
     ]
     if len(databases) != 1 or not databases[0].get("database_name"):
         raise ResetError("the selected environment must have exactly one DB binding")
     return str(databases[0]["database_name"])
 
 
-def assert_bootstrap_shape(environment_name: str, *, local: bool = False) -> dict:
-    sql = """
+def assert_bootstrap_shape(
+    environment_name: str,
+    *,
+    local: bool = False,
+    retained_admin_user_ids: tuple[str, ...] = (),
+) -> dict:
+    selected = ""
+    expected_count = 1
+    if retained_admin_user_ids:
+        retained_admin_predicates(retained_admin_user_ids)
+        selected = ",".join(f"'{user_id}'" for user_id in retained_admin_user_ids)
+        expected_count = len(retained_admin_user_ids)
+    user_filter = f" AND user_id IN ({selected})" if selected else ""
+    authority_user_ids = selected or (
+        "SELECT user_id FROM organization_memberships "
+        "WHERE role='organization_admin' AND status='active'"
+    )
+    sql = f"""
 SELECT
   (SELECT COUNT(*) FROM organizations) AS organizations,
   (SELECT COUNT(DISTINCT user_id) FROM organization_memberships
-    WHERE role='organization_admin' AND status='active') AS bootstrap_users,
+    WHERE role='organization_admin' AND status='active'{user_filter}) AS bootstrap_users,
   (SELECT COUNT(*) FROM organization_memberships
-    WHERE role='organization_admin' AND status='active') AS active_admin_memberships,
+    WHERE role='organization_admin' AND status='active'{user_filter}) AS active_admin_memberships,
   (SELECT COUNT(*) FROM user_roles
-    WHERE role='organizer' AND status='active') AS active_organizer_roles,
+    WHERE role='organizer' AND status='active'{user_filter}) AS active_organizer_roles,
   (SELECT COUNT(*) FROM password_credentials
-    WHERE status='active' AND user_id IN (
-      SELECT user_id FROM organization_memberships
-      WHERE role='organization_admin' AND status='active'
-    )) AS bootstrap_password_credentials,
+    WHERE status='active'{user_filter}) AS bootstrap_password_credentials,
+  (SELECT COUNT(*) FROM users retained_user
+    WHERE retained_user.id IN ({authority_user_ids})
+      AND EXISTS (
+        SELECT 1 FROM owned_resources resources
+        LEFT JOIN resource_access_grants grants
+          ON grants.resource_id=resources.id AND grants.user_id=retained_user.id
+         AND grants.status='active' AND grants.permission='manage'
+        WHERE resources.resource_type='organization'
+          AND resources.status='active'
+          AND (resources.owner_user_id=retained_user.id OR grants.id IS NOT NULL)
+      )) AS manageable_organizers,
   (SELECT COUNT(*) FROM instance_setup WHERE singleton_key='primary') AS completed_setups,
   (SELECT completed_at_ms FROM instance_setup WHERE singleton_key='primary') AS bootstrapped_at_ms
-""".strip()
+""".strip()  # noqa: S608 - retained UUIDs are validated before interpolation.
     rows = first_results(execute_sql(environment_name, sql, local=local))
     if len(rows) != 1:
         raise ResetError("could not read the bootstrap identity shape")
     shape = rows[0]
-    expected_one = (
-        "organizations",
+    expected_one = ("organizations", "completed_setups")
+    expected_selected = (
         "bootstrap_users",
         "active_admin_memberships",
         "active_organizer_roles",
         "bootstrap_password_credentials",
-        "completed_setups",
+        "manageable_organizers",
     )
     invalid = [name for name in expected_one if shape.get(name) != 1]
+    invalid.extend(name for name in expected_selected if shape.get(name) != expected_count)
     if invalid or not isinstance(shape.get("bootstrapped_at_ms"), int):
-        fields = (*expected_one, "bootstrapped_at_ms")
+        fields = (*expected_one, *expected_selected, "bootstrapped_at_ms")
         detail = ", ".join(f"{name}={shape.get(name)!r}" for name in fields)
         raise ResetError(
             f"refusing reset: expected one complete bootstrap identity; found {detail}"
@@ -363,16 +448,11 @@ def read_schema(environment_name: str, *, local: bool = False) -> dict[str, str]
     return schema
 
 
-def export_backup(
-    environment_name: str, database_name: str, *, local: bool = False
-) -> Path:
+def export_backup(environment_name: str, database_name: str, *, local: bool = False) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     target = "local" if local else "remote"
     backup = (
-        PROJECT_ROOT
-        / ".local"
-        / "backups"
-        / f"{database_name}-{target}-before-reset-{stamp}.sql"
+        PROJECT_ROOT / ".local" / "backups" / f"{database_name}-{target}-before-reset-{stamp}.sql"
     )
     backup.parent.mkdir(parents=True, exist_ok=True)
     result = run_wrangler(
@@ -401,9 +481,7 @@ def drop_local_schema_sql(schema: dict[str, str]) -> str:
         missing = sorted(targets - set(order))
         raise ResetError(f"local recreation could not order tables: {', '.join(missing)}")
     statements = ["PRAGMA foreign_keys=OFF"]
-    statements.extend(
-        f"DROP TABLE IF EXISTS {quote_identifier(table)}" for table in order
-    )
+    statements.extend(f"DROP TABLE IF EXISTS {quote_identifier(table)}" for table in order)
     # Workerd protects Wrangler's migration ledger from DROP TABLE with
     # SQLITE_AUTH. Emptying the ledger is sufficient: the subsequent migration
     # apply recreates every application table and records the canonical
@@ -427,9 +505,7 @@ def apply_baseline(environment_name: str, *, local: bool) -> None:
         raise ResetError("repeat baseline apply was not a confirmed no-op")
 
 
-def restore_bootstrap(
-    environment_name: str, bootstrap: Path, *, local: bool
-) -> None:
+def restore_bootstrap(environment_name: str, bootstrap: Path, *, local: bool) -> None:
     run_checked(
         [
             "d1",
@@ -457,9 +533,7 @@ def replace_database_ids(paths: tuple[Path, ...], old_id: str, new_id: str) -> N
     sources = {path: path.read_text(encoding="utf-8") for path in paths}
     invalid = [path.name for path, source in sources.items() if source.count(old_id) != 1]
     if invalid:
-        raise ResetError(
-            "expected exactly one development database id in: " + ", ".join(invalid)
-        )
+        raise ResetError("expected exactly one development database id in: " + ", ".join(invalid))
     for path, source in sources.items():
         path.write_text(source.replace(old_id, new_id), encoding="utf-8")
 
@@ -471,15 +545,12 @@ def validate_remote_rebind_sources(
     invalid = [path.name for path, source in sources.items() if source.count(old_id) != 1]
     if invalid:
         raise ResetError(
-            "expected exactly one selected database id before reset in: "
-            + ", ".join(invalid)
+            "expected exactly one selected database id before reset in: " + ", ".join(invalid)
         )
     for config in configs[:2]:
         environment, _ = load_environment(config)
         bindings = [
-            item
-            for item in environment.get("d1_databases", [])
-            if item.get("binding") == "DB"
+            item for item in environment.get("d1_databases", []) if item.get("binding") == "DB"
         ]
         expected = {"database_name": database_name, "database_id": old_id}
         mismatched = len(bindings) != 1 or any(
@@ -497,11 +568,7 @@ def validate_remote_rebind_sources(
 
 def configured_database_id(config: Path) -> str:
     environment, _ = load_environment(config)
-    bindings = [
-        item
-        for item in environment.get("d1_databases", [])
-        if item.get("binding") == "DB"
-    ]
+    bindings = [item for item in environment.get("d1_databases", []) if item.get("binding") == "DB"]
     if len(bindings) != 1 or not bindings[0].get("database_id"):
         raise ResetError("the selected environment must have one exact DB id")
     return str(bindings[0]["database_id"])
@@ -523,8 +590,7 @@ def assert_local_workers_stopped() -> None:
             continue
     if running:
         raise ResetError(
-            "stop local worker and activity-worker before reset; reachable: "
-            + ", ".join(running)
+            "stop local worker and activity-worker before reset; reachable: " + ", ".join(running)
         )
 
 
@@ -604,7 +670,11 @@ def deploy_workers(main_config: Path, activity_config: Path) -> None:
 
 
 def verify_fresh_reset(
-    environment_name: str, bootstrapped_at_ms: int, *, local: bool
+    environment_name: str,
+    bootstrapped_at_ms: int,
+    *,
+    local: bool,
+    retained_admin_user_ids: tuple[str, ...] = (),
 ) -> None:
     schema = read_schema(environment_name, local=local)
     bootstrap_names = {table for table, _ in BOOTSTRAP_TABLES}
@@ -618,14 +688,14 @@ def verify_fresh_reset(
             for table in batch
         )
         rows.extend(first_results(execute_sql(environment_name, unions, local=local)))
-    leftovers = {
-        str(row["table_name"]): int(row["row_count"])
-        for row in rows
-        if row["row_count"]
-    }
+    leftovers = {str(row["table_name"]): int(row["row_count"]) for row in rows if row["row_count"]}
     if leftovers:
         raise ResetError(f"fresh reset retained operational rows: {leftovers}")
-    shape = assert_bootstrap_shape(environment_name, local=local)
+    shape = assert_bootstrap_shape(
+        environment_name,
+        local=local,
+        retained_admin_user_ids=retained_admin_user_ids,
+    )
     if shape["bootstrapped_at_ms"] != bootstrapped_at_ms:
         raise ResetError("restored bootstrap completion timestamp changed")
     totals = first_results(
@@ -640,9 +710,14 @@ def verify_fresh_reset(
             local=local,
         )
     )
-    if len(totals) != 1 or any(
-        totals[0].get(name) != 1
-        for name in ("organizations", "users", "memberships", "roles", "credentials")
+    expected_count = len(retained_admin_user_ids) if retained_admin_user_ids else 1
+    if (
+        len(totals) != 1
+        or totals[0].get("organizations") != 1
+        or any(
+            totals[0].get(name) != expected_count
+            for name in ("users", "memberships", "roles", "credentials")
+        )
     ):
         raise ResetError(f"fresh reset did not restore an exact bootstrap identity: {totals}")
 
@@ -667,7 +742,14 @@ def main() -> int:
         "--confirm",
         help="must exactly match the configured D1 database name",
     )
+    parser.add_argument(
+        "--retain-admin-user-id",
+        action="append",
+        default=[],
+        help="active administrator UUID to preserve; repeat to retain an explicit set",
+    )
     arguments = parser.parse_args()
+    retained_admin_user_ids = tuple(arguments.retain_admin_user_id)
     if arguments.local:
         main_config = arguments.config or PROJECT_ROOT / "wrangler.jsonc"
         activity_config = arguments.activity_config or PROJECT_ROOT / "wrangler.activity.jsonc"
@@ -687,14 +769,21 @@ def main() -> int:
         database_name = validate_configuration(main_config, local=arguments.local)
         if arguments.confirm != database_name:
             raise ResetError(f"pass --confirm {database_name} to authorize the destructive reset")
-        shape = assert_bootstrap_shape(main_config, local=arguments.local)
+        shape = assert_bootstrap_shape(
+            main_config,
+            local=arguments.local,
+            retained_admin_user_ids=retained_admin_user_ids,
+        )
         schema = read_schema(main_config, local=arguments.local)
         if arguments.local:
             assert_local_workers_stopped()
         backup = export_backup(main_config, database_name, local=arguments.local)
         backup_digest = hashlib.sha256(backup.read_bytes()).hexdigest()
         bootstrap, bootstrap_digest = write_bootstrap_bundle(
-            main_config, database_name, local=arguments.local
+            main_config,
+            database_name,
+            local=arguments.local,
+            retained_admin_user_ids=retained_admin_user_ids,
         )
         if arguments.local:
             execute_sql(
@@ -721,6 +810,7 @@ def main() -> int:
             main_config,
             int(shape["bootstrapped_at_ms"]),
             local=arguments.local,
+            retained_admin_user_ids=retained_admin_user_ids,
         )
         if not arguments.local:
             deploy_workers(main_config, activity_config)
