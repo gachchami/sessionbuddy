@@ -17,6 +17,27 @@ if (!configName) throw new Error("--config requires a file path");
 
 const configPath = path.resolve(evalRoot, configName);
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+if (config.credentialsFile) {
+  const credentialsPath = path.resolve(path.dirname(configPath), config.credentialsFile);
+  const source = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
+  const accountRows = Array.isArray(source.accounts)
+    ? source.accounts
+    : Object.values(source.accounts ?? {});
+  const accounts = new Map(
+    accountRows.map((account) => [String(account.email ?? "").toLowerCase(), account]),
+  );
+  const demoEmails = {
+    organizer: "demo-organizer@sessionbuddy.demo",
+    speaker: "demo-speaker@sessionbuddy.demo",
+    reviewer: "demo-reviewer@sessionbuddy.demo",
+  };
+  config.credentials = {
+    ...(config.credentials ?? {}),
+    ...Object.fromEntries(
+      Object.entries(demoEmails).map(([persona, email]) => [persona, accounts.get(email)]),
+    ),
+  };
+}
 const errors = [];
 const startingPersonas = ["organizer", "speaker", "reviewer"];
 const emailPersonas = [...startingPersonas, "speaker2"];
@@ -43,6 +64,26 @@ for (const persona of startingPersonas) {
 
 if (config.url && new URL(config.url).origin !== new URL(targetUrl).origin) {
   errors.push("evalconfig.json URL does not match SBEK_TARGET_URL");
+}
+
+const replacements = config.fixtureReplacements ?? {};
+const specsPath = path.join(evalRoot, "specs");
+const fixtureSources = [
+  ...(fs.existsSync(specsPath) ? fs.readdirSync(specsPath) : [])
+    .filter((name) => /\.ya?ml$/i.test(name))
+    .map((name) => path.join(specsPath, name)),
+  path.join(evalRoot, "fixtures", "sample-data.json"),
+  path.join(evalRoot, "fixtures", "speakers.csv"),
+].filter((file) => fs.existsSync(file));
+const renderFixtureText = (source) => Object.entries(replacements)
+  .reduce((rendered, [before, after]) => rendered.split(before).join(String(after)), source);
+const renderedFixtureCorpus = fixtureSources
+  .map((file) => renderFixtureText(fs.readFileSync(file, "utf8")))
+  .join("\n");
+for (const legacyIdentity of ["Priya Raman", "Priya", "priya.speaker@sbek-test.example.com"]) {
+  if (renderedFixtureCorpus.includes(legacyIdentity)) {
+    errors.push(`fixture replacement drift: rendered eval instructions still contain ${legacyIdentity}`);
+  }
 }
 
 if (errors.length) {

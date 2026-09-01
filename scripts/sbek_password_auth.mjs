@@ -4,12 +4,25 @@
 import fs from "node:fs";
 import { chromium } from "/eval/node_modules/playwright/index.mjs";
 
-const [persona, hostName, targetUrl] = process.argv.slice(2);
+const [persona, hostName, targetUrl, mode] = process.argv.slice(2);
 if (!persona || !hostName || !targetUrl) {
   throw new Error("usage: sbek_password_auth.mjs <persona> <host> <target-url>");
 }
 
 const config = JSON.parse(fs.readFileSync("/eval/evalconfig.json", "utf8"));
+if (config.credentialsFile) {
+  const source = JSON.parse(fs.readFileSync(`/eval/${config.credentialsFile}`, "utf8"));
+  const accounts = Array.isArray(source.accounts)
+    ? source.accounts
+    : Object.values(source.accounts ?? {});
+  const account = accounts.find(
+    (candidate) => String(candidate.email ?? "").toLowerCase()
+      === String(config.personaEmails?.[persona] ?? "").toLowerCase(),
+  );
+  if (account) {
+    config.credentials = { ...(config.credentials ?? {}), [persona]: account };
+  }
+}
 const credential = config.credentials?.[persona];
 if (!credential?.email || !credential?.password) {
   throw new Error(`no password credential configured for ${persona}`);
@@ -37,9 +50,13 @@ try {
   if (session.status() !== 200) {
     throw new Error(`sign-in did not complete: /api/v1/auth/session returned ${session.status()}`);
   }
-  const sessionPath = `/eval/.auth/${hostName}.${persona}.json`;
-  await context.storageState({ path: sessionPath });
-  console.log(`${persona}: authenticated, storage state saved to ${sessionPath}`);
+  if (mode === "--verify-only") {
+    console.log(`${persona}: password login verified; no storage state saved`);
+  } else {
+    const sessionPath = `/eval/.auth/${hostName}.${persona}.json`;
+    await context.storageState({ path: sessionPath });
+    console.log(`${persona}: authenticated, storage state saved to ${sessionPath}`);
+  }
 } finally {
   await browser.close();
 }

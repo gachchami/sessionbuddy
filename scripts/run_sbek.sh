@@ -13,6 +13,9 @@ store_volume="${SBEK_PNPM_STORE_VOLUME:-sessionbuddy-sbek-pnpm-store-v2}"
 playwright_image="${SBEK_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.62.1-noble}"
 provider="${SBEK_PROVIDER:-anthropic-api}"
 openrouter_key_file="${SBEK_OPENROUTER_KEY_FILE:-$(pwd)/.local/openrouter_api_key}"
+featherless_key_file="${SBEK_FEATHERLESS_KEY_FILE:-$(pwd)/.local/featherless_api_key}"
+nvidia_key_file="${SBEK_NVIDIA_KEY_FILE:-$(pwd)/.local/nvidia_api_key}"
+bai_key_file="${SBEK_BAI_KEY_FILE:-$(pwd)/.local/bai_api_key}"
 
 if [ -z "$target_url" ]; then
   echo "Set SBEK_TARGET_URL to the exact deployment under evaluation." >&2
@@ -205,6 +208,64 @@ if [ "$provider" = "claude-cli" ]; then
   fi
   cd "$eval_root"
   export SBEK_PROVIDER=claude-cli
+  exec node --import tsx src/cli.ts "$command_name" --url "$target_url" "$@"
+fi
+
+# OpenAI-compatible primaries remain on the host so each individual failed
+# request can fall back to the already-authenticated Claude CLI.
+if [ "$provider" = "featherless-claude" ] || [ "$provider" = "nvidia-claude" ] || [ "$provider" = "bai-claude" ]; then
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "Claude CLI was not found on the host PATH." >&2
+    exit 2
+  fi
+  if [ ! -x "$eval_root/node_modules/.bin/tsx" ]; then
+    echo "Host eval dependencies are missing. From the eval checkout, run: pnpm install" >&2
+    exit 2
+  fi
+  if [ "$provider" = "featherless-claude" ]; then
+    if [ ! -s "$featherless_key_file" ]; then
+      echo "Featherless authentication is unavailable. Save the key in: $featherless_key_file" >&2
+      exit 2
+    fi
+    FEATHERLESS_API_KEY=$(tr -d '\r\n' < "$featherless_key_file")
+    export FEATHERLESS_API_KEY
+    export SBEK_FEATHERLESS_BASE_URL="${SBEK_FEATHERLESS_BASE_URL:-https://api.featherless.ai/v1}"
+    export SBEK_FEATHERLESS_AGENT_MODEL="${SBEK_FEATHERLESS_AGENT_MODEL:-zai-org/GLM-5.3-Flash}"
+    export SBEK_FEATHERLESS_JUDGE_MODEL="${SBEK_FEATHERLESS_JUDGE_MODEL:-zai-org/GLM-5.3-Flash}"
+    export SBEK_FEATHERLESS_TIMEOUT_MS="${SBEK_FEATHERLESS_TIMEOUT_MS:-240000}"
+    export SBEK_FEATHERLESS_MAX_ATTEMPTS="${SBEK_FEATHERLESS_MAX_ATTEMPTS:-3}"
+    export SBEK_FEATHERLESS_RETRY_BASE_MS="${SBEK_FEATHERLESS_RETRY_BASE_MS:-1500}"
+  elif [ "$provider" = "nvidia-claude" ]; then
+    if [ ! -s "$nvidia_key_file" ]; then
+      echo "NVIDIA NIM authentication is unavailable. Save the key in: $nvidia_key_file" >&2
+      exit 2
+    fi
+    NVIDIA_API_KEY=$(tr -d '\r\n' < "$nvidia_key_file")
+    export NVIDIA_API_KEY
+    export SBEK_NVIDIA_BASE_URL="${SBEK_NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1}"
+    export SBEK_NVIDIA_AGENT_MODEL="${SBEK_NVIDIA_AGENT_MODEL:-minimaxai/minimax-m3}"
+    export SBEK_NVIDIA_JUDGE_MODEL="${SBEK_NVIDIA_JUDGE_MODEL:-minimaxai/minimax-m3}"
+    export SBEK_NVIDIA_TIMEOUT_MS="${SBEK_NVIDIA_TIMEOUT_MS:-240000}"
+    export SBEK_NVIDIA_MAX_ATTEMPTS="${SBEK_NVIDIA_MAX_ATTEMPTS:-3}"
+    export SBEK_NVIDIA_RETRY_BASE_MS="${SBEK_NVIDIA_RETRY_BASE_MS:-1500}"
+  else
+    if [ ! -s "$bai_key_file" ]; then
+      echo "B.AI authentication is unavailable. Save the key in: $bai_key_file" >&2
+      exit 2
+    fi
+    BAI_API_KEY=$(tr -d '\r\n' < "$bai_key_file")
+    export BAI_API_KEY
+    export SBEK_BAI_BASE_URL="${SBEK_BAI_BASE_URL:-https://api.b.ai/v1}"
+    export SBEK_BAI_AGENT_MODEL="${SBEK_BAI_AGENT_MODEL:-glm-5.3-flash}"
+    export SBEK_BAI_JUDGE_MODEL="${SBEK_BAI_JUDGE_MODEL:-glm-5.3-flash}"
+    export SBEK_BAI_TIMEOUT_MS="${SBEK_BAI_TIMEOUT_MS:-240000}"
+    export SBEK_BAI_MAX_ATTEMPTS="${SBEK_BAI_MAX_ATTEMPTS:-3}"
+    export SBEK_BAI_RETRY_BASE_MS="${SBEK_BAI_RETRY_BASE_MS:-1500}"
+  fi
+  export SBEK_PROVIDER="$provider"
+  export SBEK_AGENT_IMAGE_BUDGET="${SBEK_AGENT_IMAGE_BUDGET:-2}"
+  export SBEK_JUDGE_IMAGE_BUDGET="${SBEK_JUDGE_IMAGE_BUDGET:-8}"
+  cd "$eval_root"
   exec node --import tsx src/cli.ts "$command_name" --url "$target_url" "$@"
 fi
 

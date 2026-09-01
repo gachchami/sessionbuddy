@@ -34,6 +34,79 @@ Before a live run, the launcher makes a safe request with each saved persona,
 checks the current `account_roles`/`active_role` contract, and stops immediately
 if a session has expired or is using the wrong active persona.
 
+## Launch the eval monitor
+
+Purpose: observe an existing eval without influencing its results.
+Lifecycle: approved operating procedure.
+Authority: the operator selects the run and provider; the eval runner owns
+execution. Monitoring must not change either.
+
+After launching or resuming the eval, resolve its actual run directory and
+runner process/session from the launch output. Do not infer the run from the
+newest directory or the dashboard's selected tab. Verify the intended target,
+provider, turn limit, and dashboard run match before scheduling the monitor.
+Reuse an existing monitor for that run instead of creating duplicates.
+
+Use the product's recurring-task mechanism to request a 30-second cadence.
+Actual delivery may be delayed; report the observation time rather than claiming
+that every check occurred exactly 30 seconds apart. Substitute the placeholders
+below with the verified launch facts; keep machine-specific values in the live
+task, not in this portable template.
+
+```text
+Monitor the existing SessionBuddy eval run <RUN_DIRECTORY> against <TARGET>
+using <PROVIDER_CHAIN>. Check every 30 seconds.
+
+Read run.log, step-events.jsonl, provider-events.jsonl, and token-usage.jsonl.
+Use token-usage-summary.json when present and cross-check its freshness against
+the latest usage event. Check the exact runner's liveness and the dashboard's
+availability without controlling the scenario browser.
+
+Report:
+- Observation time in UTC and IST.
+- Run status, area/scenario, step/total when known, and turn/<TURN_LIMIT>.
+- Intended step behavior versus observed actions and evidence since last check.
+- Actual provider/model, retries for the current call versus cumulative retries,
+  fallback state, and latest completed-call latency. Identify an in-flight call
+  separately; do not mistake a global attempt ID for its retry count.
+- Cumulative input/output/total tokens and notable per-call context growth.
+  Missing usage is unknown, not zero; token counts are not a dollar-cost estimate.
+- Product, agent, harness, provider, or connectivity failures separately.
+  Flag repeated actions, stalled steps, exhausted retries, and instruction
+  deviations. Distinguish hypotheses from confirmed failures and an agent's
+  observation from an independently verified or judged pass.
+
+Do not restart, stop, reset data, deploy, change provider settings, launch extra
+model calls, or assist scenarios. Keep the run and dashboard intact. A suspected
+loop warrants a report, not intervention. Do not expose credentials, cookies,
+authorization headers, private URLs, or raw payloads containing sensitive data.
+
+On terminal completion, report the outcome, completed/failed/incomplete
+scenarios, available scores, and missing judgments. Scenario completion is not
+a scored pass, and agent completion is not full-run completion while judging
+remains active. Retire the recurring monitor using the scheduling tool once
+the run is terminal; preserve the dashboard and evidence. If runner liveness
+or terminal status is uncertain, report that uncertainty instead.
+```
+
+Use this compact update format, omitting unavailable fields explicitly rather
+than inventing them:
+
+```text
+<UTC time> UTC / <IST time> IST — <run status>
+<Area> / <Scenario> · step <current>/<total> · turn <current>/<limit>
+Intended → observed: <task, latest evidence, progress or stall duration>.
+Provider: <actual model>; current-call retries <n>, cumulative retries <n>;
+fallback <state>; latest latency <duration>; in-flight <elapsed if known>.
+Tokens: <total> (<input> input + <output> output).
+Issues: <classification and evidence, or none newly confirmed>.
+Run and dashboard unchanged.
+```
+
+Do not copy prior status numbers into a fresh update without checking the
+current files. On unchanged checks, use a quiet status if supported; notify on
+meaningful progress, failures, stalls, fallback, or completion.
+
 ## Reset the local evaluation database
 
 Run this from the SessionBuddy repository root before a genuinely fresh local
