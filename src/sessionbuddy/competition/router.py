@@ -2302,7 +2302,9 @@ async def public_speakers(
                         JOIN speaker_asset_versions av
                         ON av.asset_id=a.id AND av.is_current=1 AND av.scan_state='clean'
                         WHERE a.event_speaker_id=es.id AND a.kind='headshot')
-                        OR EXISTS(SELECT 1 FROM user_headshots uh WHERE uh.user_id=p.user_id))
+                        OR EXISTS(SELECT 1 FROM user_headshots uh JOIN users u ON u.id=uh.user_id
+                        WHERE uh.user_id=p.user_id AND u.status='active'
+                          AND u.deleted_at_ms IS NULL AND u.public_profile_enabled=1))
                         AS has_headshot
                FROM event_speakers es JOIN people p ON p.id=es.person_id
                WHERE es.organization_id=?1 AND es.event_id=?2 AND (
@@ -2464,6 +2466,11 @@ async def public_speaker_headshot(
                  JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id
                  JOIN people p ON p.id=es.person_id AND p.organization_id=es.organization_id
                  JOIN user_headshots uh ON uh.user_id=p.user_id
+                 -- An account headshot is private profile data: serve it on the
+                 -- public program only under the same consent the public
+                 -- profile route requires.
+                 JOIN users u ON u.id=uh.user_id AND u.status='active'
+                   AND u.deleted_at_ms IS NULL AND u.public_profile_enabled=1
                  WHERE es.id=?1 AND es.event_id=?2 AND es.selection_status='accepted'
                    AND e.status='active'
                ) ORDER BY priority LIMIT 1"""

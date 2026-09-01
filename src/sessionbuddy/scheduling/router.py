@@ -17,6 +17,7 @@ from sessionbuddy.agenda import (
     reconcile_calendar_projection,
 )
 from sessionbuddy.cfp.availability import public_form_path
+from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.observability import record_degradation
@@ -2506,6 +2507,9 @@ async def publish_agenda(
 
     organizer = str(getattr(request.scope.get("env"), "CALENDAR_FROM", "events@local.invalid"))
     public_session_ids: set[str] = set()
+    # Calendar rows commit as `queued`; without a queue wake-up they wait for
+    # the recovery cron, so every publish would delay speaker confirmations.
+    queued_message_ids: list[str] = []
     for row in item_rows:
         content_is_public = _content_is_public_after_publish(
             row, approve_drafts=body.approve_draft_sessions
@@ -2527,30 +2531,32 @@ async def publish_agenda(
                 .bind(organization_id, event_id, body.revision_id, row["id"])
                 .all()
             )
-            await queue_calendar_changes(
-                db,
-                AgendaCalendarChange(
-                    organization_id=organization_id,
-                    event_id=event_id,
-                    agenda_item_id=str(row["id"]),
+            queued_message_ids.extend(
+                await queue_calendar_changes(
+                    db,
+                    AgendaCalendarChange(
+                        organization_id=organization_id,
+                        event_id=event_id,
+                        agenda_item_id=str(row["id"]),
                     accepted_session_id=str(row["accepted_session_id"]),
                     starts_at_ms=int(row["starts_at_ms"]),
                     ends_at_ms=int(row["ends_at_ms"]),
                     title=str(row["proposal_title"]),
                     description=str(row["proposal_abstract"]),
-                    room=str(row["room_name"]),
-                    organizer_email=organizer,
-                    published=True,
-                ),
-                [
-                    ScheduleSpeaker(
-                        str(value["user_id"]),
-                        str(value["email"]),
-                        str(value["display_name"]),
-                    )
-                    for value in recipients
-                ],
-                now_ms=now,
+                        room=str(row["room_name"]),
+                        organizer_email=organizer,
+                        published=True,
+                    ),
+                    [
+                        ScheduleSpeaker(
+                            str(value["user_id"]),
+                            str(value["email"]),
+                            str(value["display_name"]),
+                        )
+                        for value in recipients
+                    ],
+                    now_ms=now,
+                )
             )
         except Exception:  # Post-commit provider reads are not uniformly wrapped.
             # Publication already committed, so the response must not claim it
@@ -2558,18 +2564,21 @@ async def publish_agenda(
             record_degradation(request, "calendar_projection_failed")
             continue
     try:
-        await reconcile_calendar_projection(
-            db,
-            organization_id=organization_id,
-            event_id=event_id,
-            public_session_ids=public_session_ids,
-            organizer_email=organizer,
-            now_ms=now,
+        queued_message_ids.extend(
+            await reconcile_calendar_projection(
+                db,
+                organization_id=organization_id,
+                event_id=event_id,
+                public_session_ids=public_session_ids,
+                organizer_email=organizer,
+                now_ms=now,
+            )
         )
     except Exception:  # Post-commit provider reads are not uniformly wrapped.
         # Publication is durable. A later agenda publication reruns this
         # reconciliation, whose invitation UID and sequence writes are retry-safe.
         record_degradation(request, "calendar_projection_failed")
+    await publish_committed_messages(request, queued_message_ids)
     return response
 
 

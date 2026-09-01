@@ -14,7 +14,8 @@ def test_landing_mounts_the_existing_public_event_directory() -> None:
     assert 'aria-labelledby="public-programs-title"' in landing
     assert 'data-public-events class="public-events-grid" aria-busy="true"' in landing
     assert 'class="public-events-empty" role="status"' in landing
-    assert 'request("/api/v1/public/events")' in shell
+    # Shell-owned: it must not be cancelled by an event-workspace section swap.
+    assert 'request("/api/v1/public/events", {}, { persistent: true })' in shell
     assert '`/cfp/${eventKey}/${encodeURIComponent(event.cfp_slug)}`' in shell
     assert '`/events/${encodeURIComponent(event.id)}/schedule`' in shell
     assert '`/events/${encodeURIComponent(event.id)}/speakers`' in shell
