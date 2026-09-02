@@ -146,6 +146,9 @@
     node.addEventListener("pointerenter", () => {
       prefetchDocument(node.href);
       clearTimeout(intentTimer);
+      // Destinations the workspace swaps in place only need the warm HTML
+      // fetch; a prerendered document would be thrown away on click.
+      if (softNavigable(new URL(node.href, location.href))) return;
       intentTimer = setTimeout(() => prerenderDocument(node.href), PRERENDER_INTENT_DELAY_MS);
     }, { passive: true });
     node.addEventListener("pointerleave", () => clearTimeout(intentTimer), { passive: true });
@@ -172,8 +175,19 @@
   // An explicit allowlist of the fields the shell reads for an identity-only
   // cached paint. No workspace path or authority projection is persisted: only
   // the current authoritative response may activate navigation.
+  // The frame shape (sidebar or topbar-only) is a layout hint, not an
+  // authority projection: the cached paint reserves the same geometry with
+  // skeleton rows and no links, so the authoritative render does not shift
+  // the page when it lands.
+  let currentFrame = "";
+  function rememberFrame(frame) {
+    currentFrame = frame;
+    if (window.SessionBuddyShellSession && readCachedSession()) writeCachedSession(window.SessionBuddyShellSession);
+  }
+
   function cacheableSession(session) {
     return {
+      frame: currentFrame || String(session.frame || ""),
       email: String(session.email || ""),
       display_name: String(session.display_name || ""),
       organization_name: String(session.organization_name || ""),
@@ -349,7 +363,7 @@
         method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": sessionCsrfToken(session) },
         body: "{}"
-      });
+      }, { persistent: true });
       location.assign(destination);
     } catch (error) {
       if (error && error.status === 401) {
@@ -370,7 +384,7 @@
         method: "PUT",
         headers: { "content-type": "application/json", "x-csrf-token": sessionCsrfToken(session) },
         body: JSON.stringify({ role: choice.role })
-      });
+      }, { persistent: true });
       clearCachedSession();
       cancelSpeculativeLoads();
       broadcastSessionChange();
@@ -507,6 +521,29 @@
     return location.pathname === "/calls" || location.pathname === "/account";
   }
 
+  const EVENT_NAME_CACHE_PREFIX = "sessionbuddy.event-name.";
+  const eventNameRequests = new Map();
+  function eventNameLabel(eventId) {
+    const label = make("strong");
+    let cached = "";
+    try { cached = sessionStorage.getItem(EVENT_NAME_CACHE_PREFIX + eventId) || ""; } catch (_) { /* storage unavailable */ }
+    if (cached) { label.textContent = cached; return label; }
+    // Unknown until the event loads; a failed read leaves the topbar blank
+    // rather than repeating the page name, since the heading names the page.
+    if (!eventNameRequests.has(eventId)) {
+      eventNameRequests.set(eventId, window.SessionBuddyApi
+        .request(`/api/v1/admin/events/${encodeURIComponent(eventId)}`)
+        .then((event) => String(event?.name || ""))
+        .catch(() => ""));
+    }
+    eventNameRequests.get(eventId).then((name) => {
+      if (!name) return;
+      try { sessionStorage.setItem(EVENT_NAME_CACHE_PREFIX + eventId, name); } catch (_) { /* storage unavailable */ }
+      label.textContent = name;
+    });
+    return label;
+  }
+
   function pageLabel(section, eventId) {
     if (location.pathname === "/admin/events/new") return "New event";
     if (eventId) {
@@ -522,7 +559,8 @@
       if (location.pathname.includes("/submissions")) return "Proposals";
       return "Overview";
     }
-    return { home: "Home", events: "Events", speakers: "People", reviews: "Reviews", speaker: "Speaker home", account: "Account" }[section] || "Home";
+    if (location.pathname === "/admin/organization") return "Organization settings";
+    return { home: "Home", events: "Events", speakers: "People", reviews: "Reviews", speaker: "Speaker home", account: "Account", calls: "Calls for proposals" }[section] || "Home";
   }
 
   function eventNav(eventId, canAdministerAccess = true) {
@@ -703,6 +741,7 @@
     const hasSidebarNavigation = Boolean(sidebar.querySelector(".sb-sidebar__nav a"));
     const topbarOnlyWorkspace = !hasSidebarNavigation;
     document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace);
+    rememberFrame(topbarOnlyWorkspace ? "single" : organizerWorkspace && currentEventId ? "event" : "global");
 
     const account = accountMenu(session, roles);
     const topbar = make("div", undefined, "sb-topbar");
@@ -713,7 +752,15 @@
     menuButton.setAttribute("aria-expanded", "false");
     menuButton.append(make("span"), make("span"), make("span"));
     const crumb = make("div", undefined, "sb-topbar__title");
-    crumb.append(make("strong", pageLabel(section, currentEventId)));
+    if (organizerWorkspace && currentEventId && section !== "home") {
+      // Event pages already name themselves in their heading and the sidebar
+      // marks the current one, so the topbar carries the event instead of
+      // repeating the page name. Overview's heading is the event itself.
+      const isOverview = location.pathname === `/admin/events/${encodeURIComponent(currentEventId)}`;
+      if (!isOverview) crumb.append(eventNameLabel(currentEventId));
+    } else {
+      crumb.append(make("strong", pageLabel(section, currentEventId)));
+    }
     // Home owns its live summary. Move that same node on every shell render so
     // organization updates remain attached and we do not duplicate page titles.
     const workspaceHeading = document.getElementById("workspace-heading");
@@ -764,7 +811,13 @@
     }
     // The same navigation is used on desktop and in the mobile drawer. Keep
     // role and event permission decisions above; this only changes placement.
-    topbar.replaceChildren(menuButton, crumb, account);
+    // The drawer hides the sidebar brand on narrow screens, so the topbar
+    // carries a compact brand link there; desktop hides it in favor of the
+    // sidebar's.
+    const topbarBrand = session.profile_complete ? link("", activeDestination) : brandIdentity("sb-topbar__brand");
+    topbarBrand.className = "sb-topbar__brand";
+    if (session.profile_complete) topbarBrand.append(brandMark(), make("strong", "SessionBuddy"));
+    topbar.replaceChildren(menuButton, topbarBrand, crumb, account);
 
     const backdrop = make("button", undefined, "sb-nav-backdrop");
     backdrop.type = "button";
@@ -858,7 +911,7 @@
     if (!publicEvents) return;
     publicEvents.setAttribute("aria-busy", "true");
     try {
-      const response = await window.SessionBuddyApi.request("/api/v1/public/events");
+      const response = await window.SessionBuddyApi.request("/api/v1/public/events", {}, { persistent: true });
       publicEvents.replaceChildren();
       const events = Array.isArray(response?.data) ? response.data : [];
       if (!events.length) {
@@ -1036,15 +1089,35 @@
 
   function renderCachedShell(session) {
     if (!shell) return;
-    document.body.classList.add("sb-shell-authenticated", "sb-shell-single");
-    document.body.classList.remove("sb-shell-global", "sb-shell-event", "sb-shell-guest");
+    const frame = ["global", "event"].includes(session.frame) ? session.frame : "single";
+    document.body.classList.add("sb-shell-authenticated");
+    document.body.classList.remove("sb-shell-guest");
+    document.body.classList.toggle("sb-shell-single", frame === "single");
+    document.body.classList.toggle("sb-shell-global", frame !== "single");
+    document.body.classList.toggle("sb-shell-event", frame === "event");
     const topbar = make("div", undefined, "sb-topbar");
-    topbar.append(
-      brandIdentity("sb-global-brand"),
-      make("span", `Checking access for ${displayName(session)}…`, "sb-topbar__title")
-    );
-    shell.className = "sb-app-shell sb-app-shell--single";
-    shell.replaceChildren(topbar);
+    const checking = `Checking access for ${displayName(session)}…`;
+    if (frame === "single") {
+      topbar.append(brandIdentity("sb-global-brand"), make("span", checking, "sb-topbar__title"));
+      shell.className = "sb-app-shell sb-app-shell--single";
+      shell.replaceChildren(topbar);
+      return;
+    }
+    // Same width, same slots, no links: the real navigation replaces this in
+    // place once the session is confirmed.
+    const sidebar = make("aside", undefined, "sb-sidebar sb-sidebar--placeholder");
+    sidebar.id = "workspace-navigation";
+    sidebar.setAttribute("aria-hidden", "true");
+    const rows = make("div", undefined, "sb-sidebar__nav");
+    for (let index = 0; index < (frame === "event" ? 8 : 3); index += 1) rows.append(make("span", undefined, "sb-skeleton"));
+    const primary = make("div", undefined, "sb-sidebar__group sb-sidebar__primary");
+    primary.append(rows);
+    sidebar.append(brandIdentity("sb-app-brand"), primary);
+    const title = make("div", undefined, "sb-topbar__title");
+    title.append(make("span", undefined, "sb-skeleton"), make("span", checking, "sr-only"));
+    topbar.append(brandIdentity("sb-global-brand"), title, make("span", undefined, "sb-skeleton sb-account-placeholder"));
+    shell.className = "sb-app-shell";
+    shell.replaceChildren(sidebar, topbar);
   }
 
   function renderRecoveryAccountShell(session) {
@@ -1126,6 +1199,244 @@
     return true;
   }
 
+  // ---- Event workspace soft navigation -----------------------------------
+  // Inside one event, section links swap only the page body: the shell, its
+  // confirmed session, and the shared assets stay put while the URL still
+  // changes, so every section keeps its durable address. Page scripts are
+  // self-booting closures, so the destination's script element is re-created
+  // against the new body, and the departing page is told to release anything
+  // global through window.SessionBuddyPage. Anything unexpected falls back to
+  // an ordinary document navigation.
+  const SHARED_ASSET_PATHS = new Set([
+    "/product/assets/product.css",
+    "/app-shell/assets/app-shell.css",
+    "/app-shell/assets/api-client.js",
+    "/app-shell/assets/app-shell.js",
+  ]);
+  let pageController = new AbortController();
+  window.SessionBuddyPage = Object.freeze({
+    // Aborted just before the page body is replaced. Listeners and timers
+    // registered against it cannot outlive their page.
+    get signal() { return pageController.signal; },
+    onLeave(callback) { pageController.signal.addEventListener("abort", callback, { once: true }); },
+  });
+
+  function workspacePrefix(pathname) {
+    const match = pathname.match(/^\/admin\/events\/([^/]+)(?=\/|$)/);
+    return match && match[1] !== "new" ? match[0] : "";
+  }
+
+  // A page takes part in the swap only when it declares itself lifecycle-safe
+  // (`<main data-sb-swappable>`): its timers, channels, and global listeners
+  // are bound to the page signal, and its script boots correctly inside an
+  // existing document. Any page without the declaration keeps document
+  // navigation, so a new section is safe by default.
+  function swappableDocument(root) {
+    return Boolean(root.querySelector("main[data-sb-swappable]"));
+  }
+
+  function softNavigable(url) {
+    if (!shell || !window.SessionBuddyShellSession || url.origin !== location.origin) return false;
+    if (!swappableDocument(document)) return false;
+    const here = workspacePrefix(location.pathname);
+    return Boolean(here) && here === workspacePrefix(url.pathname);
+  }
+
+  function isPageAsset(node) {
+    try {
+      return !SHARED_ASSET_PATHS.has(new URL(node.getAttribute("href") || node.getAttribute("src"), location.href).pathname);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function loadAsset(node) {
+    return new Promise((resolve, reject) => {
+      node.addEventListener("load", resolve, { once: true });
+      node.addEventListener("error", () => reject(new Error(`asset failed: ${node.href || node.src}`)), { once: true });
+      document.head.append(node);
+    });
+  }
+
+  for (const node of document.head.querySelectorAll('link[rel="stylesheet"], script[src]')) {
+    if (isPageAsset(node)) node.dataset.sbPageAsset = "";
+  }
+
+  let currentDocumentPath = location.pathname;
+  let softNavigationSequence = 0;
+  // History entries created here carry an index so a traversal the page
+  // refuses can be undone precisely, keeping URL and body in agreement.
+  let historyIndex = Number.isInteger(history.state?.sbIndex) ? history.state.sbIndex : 0;
+  let suppressedTraversals = 0;
+  let consentedTraversal = false;
+  let pendingConsent = null;
+  // The document's own entry is stamped too, so a Back from the first swap
+  // can be undone as precisely as any later one.
+  if (!Number.isInteger(history.state?.sbIndex)) {
+    try {
+      history.replaceState({ ...(history.state && typeof history.state === "object" ? history.state : {}), sbIndex: historyIndex }, "");
+    } catch (_) { /* History may be unavailable in exotic embeddings. */ }
+  }
+
+  function pageRefusesToLeave() {
+    const leaving = new Event("sessionbuddy:navigate", { cancelable: true });
+    window.dispatchEvent(leaving);
+    return leaving.defaultPrevented;
+  }
+
+  function releasePage() {
+    pageController.abort();
+    pageController = new AbortController();
+  }
+
+  async function softNavigate(url, { push = true, consented = false } = {}) {
+    if (!consented && pageRefusesToLeave()) {
+      // The page holds unsaved work: a document navigation keeps the native
+      // "leave this page?" prompt in charge.
+      location.assign(url.href);
+      return;
+    }
+    const sequence = ++softNavigationSequence;
+    document.documentElement.dataset.sbNavigating = "";
+    const installed = [];
+    const abandon = () => {
+      // Nothing on the working page has changed yet: undo what this attempt
+      // added and let the browser load the destination normally.
+      for (const node of installed) node.remove();
+      delete document.documentElement.dataset.sbNavigating;
+      location.assign(url.href);
+    };
+    let next;
+    try {
+      const response = await fetch(url.href, { headers: { accept: "text/html" }, credentials: "same-origin" });
+      const type = (response.headers.get("content-type") || "").toLowerCase();
+      if (!response.ok || !type.includes("text/html")) throw new Error(`unexpected response ${response.status}`);
+      next = new DOMParser().parseFromString(await response.text(), "text/html");
+    } catch (_) {
+      abandon();
+      return;
+    }
+    if (sequence !== softNavigationSequence) return;
+    const nextMain = next.querySelector("main");
+    const currentMain = document.querySelector("main");
+    if (!nextMain || !currentMain || !next.querySelector("[data-auth-shell]") || !swappableDocument(next)) {
+      abandon();
+      return;
+    }
+    // New stylesheets land before the body swaps so the destination never
+    // paints unstyled; the departing page's sheets leave once it is gone.
+    try {
+      await Promise.all([...next.head.querySelectorAll('link[rel="stylesheet"]')].filter(isPageAsset).map((source) => {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = source.getAttribute("href");
+        link.dataset.sbPageAsset = "";
+        installed.push(link);
+        return loadAsset(link);
+      }));
+    } catch (_) {
+      abandon();
+      return;
+    }
+    if (sequence !== softNavigationSequence) {
+      // A newer navigation took over while these loaded; they belong to no page.
+      for (const node of installed) node.remove();
+      return;
+    }
+    const departing = [...document.head.querySelectorAll("[data-sb-page-asset]")]
+      .filter((node) => !installed.includes(node))
+      .filter((node) => !node.matches("link") || !next.head.querySelector(`link[href="${CSS.escape(node.getAttribute("href"))}"]`));
+    releasePage();
+    cancelSpeculativeLoads();
+    if (push) {
+      historyIndex += 1;
+      history.pushState({ sessionbuddy: "workspace", sbIndex: historyIndex }, "", url.href);
+    }
+    currentDocumentPath = location.pathname;
+    document.title = next.title;
+    const kept = [...document.body.classList].filter((name) => name.startsWith("sb-shell-"));
+    document.body.className = [...new Set([...next.body.classList, ...kept])].join(" ");
+    const skipLink = document.querySelector("body > .skip-link");
+    const nextSkipLink = next.querySelector("body > .skip-link");
+    if (skipLink && nextSkipLink) skipLink.replaceWith(document.adoptNode(nextSkipLink));
+    currentMain.replaceWith(document.adoptNode(nextMain));
+    for (const node of departing) node.remove();
+    window.scrollTo(0, 0);
+    if (window.SessionBuddyShellSession) renderShell(window.SessionBuddyShellSession);
+    // Page scripts run in declared order against the new body. A script that
+    // fails to load would leave the section stuck in its skeleton, so the
+    // document navigation takes over instead.
+    try {
+      for (const source of [...next.head.querySelectorAll("script[src]")].filter(isPageAsset)) {
+        const script = document.createElement("script");
+        script.src = source.getAttribute("src");
+        script.async = false;
+        script.dataset.sbPageAsset = "";
+        await loadAsset(script);
+      }
+    } catch (_) {
+      location.replace(url.href);
+      return;
+    }
+    delete document.documentElement.dataset.sbNavigating;
+    if (sequence !== softNavigationSequence) return;
+    const main = document.querySelector("main");
+    if (main) {
+      if (!main.hasAttribute("tabindex")) main.tabIndex = -1;
+      main.focus({ preventScroll: true });
+    }
+  }
+
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!anchor || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download") || anchor.dataset.fullNavigation !== undefined) return;
+    let url;
+    try { url = new URL(anchor.href, location.href); } catch (_) { return; }
+    if (!softNavigable(url)) return;
+    // Same-page links (anchors, filters) keep their native behavior.
+    if (url.pathname === location.pathname && url.search === location.search) return;
+    event.preventDefault();
+    softNavigate(url);
+  });
+
+  window.addEventListener("popstate", (event) => {
+    if (suppressedTraversals > 0) {
+      // The traversal that undid a refused Back/Forward. URL and body agree
+      // again, so this is the moment to ask; a second relative traversal
+      // issued before this one landed would have had no entry to reach.
+      suppressedTraversals -= 1;
+      const consent = pendingConsent;
+      pendingConsent = null;
+      if (consent && window.confirm("You have unsaved changes. Leave this page and lose them?")) {
+        consentedTraversal = true;
+        history.go(-consent.delta);
+      }
+      return;
+    }
+    // Only in-document entries reach here: hash changes keep the path, and
+    // entries from other documents are real navigations.
+    if (location.pathname === currentDocumentPath) return;
+    if (!workspacePrefix(location.pathname) || !shell || !window.SessionBuddyShellSession) {
+      location.reload();
+      return;
+    }
+    const targetIndex = Number.isInteger(event.state?.sbIndex) ? event.state.sbIndex : null;
+    const consented = consentedTraversal;
+    consentedTraversal = false;
+    if (!consented && targetIndex !== null && pageRefusesToLeave()) {
+      // The browser has already moved the URL. Put it back first so the page
+      // on screen and the address agree, then let the organizer decide.
+      const delta = historyIndex - targetIndex;
+      suppressedTraversals += 1;
+      pendingConsent = { delta };
+      history.go(delta);
+      return;
+    }
+    if (targetIndex !== null) historyIndex = targetIndex;
+    softNavigate(new URL(location.href), { push: false, consented: true });
+  });
+
   let shellPaintedFromCache = false;
 
   async function initialize() {
@@ -1167,7 +1478,7 @@
         cancelSpeculativeLoads();
         if (landingAccount) {
           try {
-            const setupState = await window.SessionBuddyApi.request("/api/v1/setup/status");
+            const setupState = await window.SessionBuddyApi.request("/api/v1/setup/status", {}, { persistent: true });
             if (!setupState.configured) {
               location.assign("/setup");
               return;

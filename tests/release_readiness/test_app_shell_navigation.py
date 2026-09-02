@@ -64,17 +64,36 @@ def test_source_wiring_event_navigation_warms_documents_without_hijacking_links(
     assert "if (prerenderCandidate?.href === href) return;" in prerender_function
     assert "cancelSpeculativeLoads();" in prerender_function
     assert "prerenderCandidate = { href, hint };" in prerender_function
-    # Navigation stays the browser's: durable URLs, Back/Forward, bfcache.
-    # Nothing intercepts clicks or replays documents by hand.
+    # Warming never hijacks a link by itself; the only click interception is
+    # the event-workspace swap below, and it is gated on the destination
+    # sharing the current event so every other link stays the browser's.
     warm_function = javascript.split("function warmNavigation", 1)[1].split(
         "const SESSION_CACHE_KEY", 1
     )[0]
     assert "preventDefault" not in warm_function
     assert "document.write" not in javascript
-    intercepted_click = (
-        'document.addEventListener("click", (event) => {\n    if (event.defaultPrevented'
-    )
-    assert intercepted_click not in javascript
+    click_handler = javascript.split(
+        'document.addEventListener("click", (event) => {\n    if (event.defaultPrevented', 1
+    )[1].split("\n  });", 1)[0]
+    assert "if (!softNavigable(url)) return;" in click_handler
+    # Durable URLs and Back/Forward survive the in-place swap.
+    push = 'history.pushState({ sessionbuddy: "workspace", sbIndex: historyIndex }, "", url.href);'
+    assert push in javascript
+    assert 'window.addEventListener("popstate", (event) => {' in javascript
+    # Unsaved work, foreign responses, and missing page structure fall back to
+    # a document navigation rather than a half-swapped page.
+    assert "if (!consented && pageRefusesToLeave()) {" in javascript
+    assert "const abandon = () => {" in javascript
+    assert "location.replace(url.href);" in javascript
+    # Only pages that declare themselves lifecycle-safe take part, on both ends.
+    assert 'root.querySelector("main[data-sb-swappable]")' in javascript
+    assert "!swappableDocument(next)" in javascript
+    # A refused Back/Forward is undone before the organizer is asked.
+    assert "history.go(delta);" in javascript
+    prompt = 'window.confirm("You have unsaved changes. Leave this page and lose them?")'
+    assert prompt in javascript
+    # Prerender is reserved for links the swap will not handle.
+    assert "if (softNavigable(new URL(node.href, location.href))) return;" in warm_function
     assert "@view-transition { navigation: auto; }" in stylesheet
     reduced_motion = stylesheet.split("@media (prefers-reduced-motion: reduce)", 1)[1]
     assert "::view-transition-old(root)" in reduced_motion
@@ -194,13 +213,17 @@ def test_source_wiring_cached_session_never_stores_credentials_and_cannot_outliv
 
 
 def test_source_wiring_csp_permits_only_the_inline_speculation_rules_the_shell_emits() -> None:
-    security = (STATIC.parent / "security.py").read_text(encoding="utf-8")
+    from sessionbuddy.security import content_security_policy
 
-    # Without this source, script-src falls back to default-src 'self' and
-    # Chromium silently drops the inline rule: the shell would detect support,
-    # skip the prefetch fallback, and end up with neither.
-    assert "script-src 'self' 'inline-speculation-rules'; " in security
-    assert "'unsafe-inline'" not in security.split("style-src-attr", 1)[0]
+    policy = content_security_policy(None)
+
+    assert "script-src 'self' 'inline-speculation-rules'; " in policy
+    assert "connect-src 'self'; " in policy
+    assert "localhost" not in policy
+    # style-src is assembled now, so read the emitted directive rather than the
+    # source text: inline stylesheets stay blocked everywhere the dev flag is unset.
+    assert "style-src 'self'; " in policy
+    assert "'unsafe-inline'" not in policy.split("style-src-attr", 1)[0]
 
 
 def test_source_wiring_global_pages_use_the_reference_sidebar() -> None:
@@ -344,7 +367,7 @@ def test_source_wiring_landing_uses_one_role_aware_dashboard_entry() -> None:
     primary_navigation = landing.split(
         '<nav class="primary-nav" aria-label="Primary navigation">', 1
     )[1].split("</nav>", 1)[0]
-    hero_actions = landing.split('<div class="hero-actions">', 1)[1].split("</div>", 1)[0]
+    hero_actions = landing.split('<div class="session__actions">', 1)[1].split("</div>", 1)[0]
     assert "Speaker portal" not in primary_navigation
     assert "Platform status" not in primary_navigation
     assert "Speaker portal" not in hero_actions

@@ -116,20 +116,26 @@ test.describe("app shell navigation runtime", () => {
     await page.waitForTimeout(250);
     await expect(speculationRules(page)).toHaveCount(0);
 
-    // Resting on a link past the delay arms exactly one candidate. Script
-    // elements render no text, so the rule body is read via textContent.
+    // Sections of the current event swap in place on click, so resting on
+    // one only warms the HTML fetch; a prerendered document would be wasted.
     const cfpLink = nav.locator('a[href$="/cfp"]');
     await cfpLink.hover();
     await page.waitForTimeout(300);
-    await expect(speculationRules(page)).toHaveCount(1);
-    expect(await speculationRules(page).textContent()).toContain("/cfp");
+    await expect(speculationRules(page)).toHaveCount(0);
+    await expect(prefetchHints(page)).not.toHaveCount(0);
 
-    // ...and moving intent elsewhere replaces it instead of accumulating.
-    const agendaLink = nav.locator('a[href$="/agenda"]');
-    await agendaLink.hover();
+    // Destinations outside the event are document navigations: resting on a
+    // link past the delay arms exactly one candidate, and moving intent
+    // elsewhere replaces it instead of accumulating.
+    const globalNav = page.locator(".sb-sidebar__nav");
+    await globalNav.locator('a[href="/admin"]').hover();
     await page.waitForTimeout(300);
     await expect(speculationRules(page)).toHaveCount(1);
-    expect(await speculationRules(page).textContent()).toContain("/agenda");
+    expect(await speculationRules(page).textContent()).toContain("/admin");
+    await globalNav.locator('a[href="/admin/people"]').hover();
+    await page.waitForTimeout(300);
+    await expect(speculationRules(page)).toHaveCount(1);
+    expect(await speculationRules(page).textContent()).toContain("/admin/people");
 
     expect(cspViolations).toEqual([]);
   });
@@ -173,7 +179,76 @@ test.describe("app shell navigation runtime", () => {
     expect(documentLoads.length).toBe(1);
   });
 
-  test("navigating between event pages paints the shell before the network answers", async ({ page }) => {
+  test("a refused Back/Forward restores the URL, and consent lets it proceed", async ({ page }) => {
+    await mockApis(page);
+    await page.goto(`/admin/events/${eventId}`);
+    await openEventNavigation(page);
+    await page.locator('.sb-event-nav a[href$="/cfp"]').click();
+    await page.waitForURL(`**/admin/events/${eventId}/cfp`);
+    await expect(page).toHaveTitle("Call for Proposals · SessionBuddy");
+
+    // Stand in for a page with unsaved work: refuse to leave until consent,
+    // bound to the page signal exactly as the editors do.
+    await page.evaluate(() => {
+      const w = window as Window & { __decision?: boolean; __prompts?: number; __sameDocument?: boolean };
+      w.__sameDocument = true;
+      w.__prompts = 0;
+      w.__decision = false;
+      window.addEventListener("sessionbuddy:navigate", (event) => event.preventDefault(), {
+        signal: (window as Window & { SessionBuddyPage?: { signal: AbortSignal } }).SessionBuddyPage!.signal,
+      });
+      window.confirm = () => { w.__prompts! += 1; return Boolean(w.__decision); };
+    });
+
+    // Cancel: the browser had already moved, so the URL comes back to the
+    // page that is still on screen.
+    await page.goBack().catch(() => {});
+    await expect(page).toHaveURL(new RegExp(`/admin/events/${eventId}/cfp$`));
+    await expect(page).toHaveTitle("Call for Proposals · SessionBuddy");
+    expect(await page.evaluate(() => (window as Window & { __prompts?: number }).__prompts)).toBe(1);
+
+    // Accept: the same traversal now completes as an in-place swap.
+    await page.evaluate(() => { (window as Window & { __decision?: boolean }).__decision = true; });
+    await page.goBack().catch(() => {});
+    await expect(page).toHaveURL(new RegExp(`/admin/events/${eventId}$`));
+    await expect(page).toHaveTitle(/DevFlow|Event overview|SessionBuddy/);
+    await expect(page.locator('.sb-event-nav a[href$="/cfp"]')).not.toHaveAttribute("aria-current", "page");
+    expect(await page.evaluate(() => (window as Window & { __sameDocument?: boolean }).__sameDocument)).toBe(true);
+  });
+
+  test("a destination whose assets fail falls back to a document navigation", async ({ page }) => {
+    await mockApis(page);
+    await page.route("**/admin/agenda/assets/agenda.css*", (route: Route) => route.abort());
+    await page.goto(`/admin/events/${eventId}`);
+    await openEventNavigation(page);
+    await page.evaluate(() => { (window as Window & { __sameDocument?: boolean }).__sameDocument = true; });
+    await page.locator('.sb-event-nav a[href$="/agenda"]').click();
+    await page.waitForURL(`**/admin/events/${eventId}/agenda`);
+    // The working page was never half-swapped: the browser loaded the
+    // destination as a fresh document instead.
+    await expect.poll(() => page.evaluate(() => (window as Window & { __sameDocument?: boolean }).__sameDocument)).toBeUndefined();
+    await expect(page.locator("main")).toHaveCount(1);
+  });
+
+  test("rapid overlapping section clicks settle on the last destination", async ({ page }) => {
+    await mockApis(page);
+    await page.goto(`/admin/events/${eventId}`);
+    await openEventNavigation(page);
+    // Two clicks inside one task, faster than any drawer or fetch can settle.
+    await page.evaluate(() => {
+      (document.querySelector('.sb-event-nav a[href$="/cfp"]') as HTMLAnchorElement).click();
+      (document.querySelector('.sb-event-nav a[href$="/agenda"]') as HTMLAnchorElement).click();
+    });
+    await page.waitForURL(`**/admin/events/${eventId}/agenda`);
+    await expect(page).toHaveTitle("Agenda editor · SessionBuddy");
+    await expect(page.locator('script[src*="/admin/agenda/assets/agenda.js"]')).toHaveCount(1);
+    await expect(page.locator('script[src*="admin-programs.js"]')).toHaveCount(0);
+    await expect(page.locator('link[href*="/admin/agenda/assets/agenda.css"]')).toHaveCount(1);
+    await expect(page.locator("main")).toHaveCount(1);
+    await expect(page.locator('.sb-event-nav a[href$="/agenda"]')).toHaveAttribute("aria-current", "page");
+  });
+
+  test("navigating between event pages keeps the shell and swaps the section in place", async ({ page }) => {
     const control = await mockApis(page);
     await page.goto(`/admin/events/${eventId}`);
     await openEventNavigation(page);
@@ -186,26 +261,28 @@ test.describe("app shell navigation runtime", () => {
     expect(cached.session.workspace_path).toBeUndefined();
     expect(cached.session.organization_access).toBeUndefined();
 
-    // A cached identity can paint immediately, but it cannot expose workspace
-    // navigation until the authoritative response arrives.
+    // Inside one event the shell and its confirmed session stay on screen:
+    // only the section body is fetched and swapped, and the URL still moves.
+    await page.evaluate(() => { (window as Window & { __sameDocument?: boolean }).__sameDocument = true; });
     control.delayMs = 2500;
     await page.locator('.sb-event-nav a[href$="/cfp"]').click();
     await page.waitForURL(`**/admin/events/${eventId}/cfp`);
-    await expect(page.locator(".sb-global-brand:not(a)")).toBeVisible({ timeout: 1200 });
-    await expect(page.locator(".sb-topbar__title")).toHaveText("Checking access for Shell Navigator…");
-    await expect(page.locator(".sb-event-nav")).toHaveCount(0);
-    await expect(page.locator(".sb-account")).toHaveCount(0);
-    await openEventNavigation(page);
+    await expect(page).toHaveTitle("Call for Proposals · SessionBuddy");
+    await expect(page.locator(".sb-event-nav")).toHaveCount(1);
+    await expect(page.locator(".sb-account")).toHaveCount(1);
+    await expect(page.locator('.sb-event-nav a[href$="/cfp"]')).toHaveAttribute("aria-current", "page");
+    expect(await page.evaluate(() => (window as Window & { __sameDocument?: boolean }).__sameDocument)).toBe(true);
+    await expect(page.locator("main")).toBeFocused();
 
-    // Durable URLs stay the browser's. Back and Forward repeat the same safe
-    // identity-first, authority-after-response sequence.
+    // Durable URLs stay the browser's: Back and Forward replay the same
+    // in-place swap without leaving the document.
     await page.goBack();
     await page.waitForURL(`**/admin/events/${eventId}`);
-    await expect(page.locator(".sb-global-brand:not(a)")).toBeVisible({ timeout: 1200 });
-    await openEventNavigation(page);
+    await expect(page.locator('.sb-event-nav a[href$="/cfp"]')).not.toHaveAttribute("aria-current", "page");
+    expect(await page.evaluate(() => (window as Window & { __sameDocument?: boolean }).__sameDocument)).toBe(true);
     await page.goForward();
     await page.waitForURL(`**/admin/events/${eventId}/cfp`);
-    await expect(page.locator(".sb-global-brand:not(a)")).toBeVisible({ timeout: 1200 });
-    await openEventNavigation(page);
+    await expect(page).toHaveTitle("Call for Proposals · SessionBuddy");
+    expect(await page.evaluate(() => (window as Window & { __sameDocument?: boolean }).__sameDocument)).toBe(true);
   });
 });
