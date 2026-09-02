@@ -1816,3 +1816,53 @@ def test_sbek_config_preflight_requires_real_inboxes_and_switch_credentials(
     assert invalid.returncode == 2
     assert "reviewer needs an inbox address you control" in invalid.stderr
     assert "fixture-reviewer-password" not in invalid.stderr
+
+
+def test_sbek_config_preflight_rejects_incomplete_demo_identity_replacement(
+    tmp_path: Path,
+) -> None:
+    target = "https://sessionbuddy-development.example.test"
+    (tmp_path / "specs").mkdir()
+    (tmp_path / "fixtures").mkdir()
+    (tmp_path / "specs" / "speakers.yaml").write_text(
+        "steps: Find Priya after adding Priya Raman.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "fixtures" / "sample-data.json").write_text("{}", encoding="utf-8")
+    config = {
+        "url": target,
+        "personaEmails": {
+            "organizer": "qa+organizer@example.test",
+            "speaker": "qa+speaker@example.test",
+            "speaker2": "qa+speaker2@example.test",
+            "reviewer": "qa+reviewer@example.test",
+        },
+        "credentials": {
+            persona: {"email": f"qa+{persona}@example.test", "password": "fixture-password"}
+            for persona in ("organizer", "speaker", "reviewer")
+        },
+        "fixtureReplacements": {"Priya Raman": "Sasha Speaker"},
+    }
+    (tmp_path / "evalconfig.json").write_text(json.dumps(config), encoding="utf-8")
+    checker = PROJECT_ROOT / "scripts" / "check_sbek_config.mjs"
+    node = shutil.which("node")
+    assert node is not None
+
+    incomplete = subprocess.run(  # noqa: S603 - fixed repository script under test
+        [node, str(checker), str(tmp_path), target],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert incomplete.returncode == 2
+    assert "rendered eval instructions still contain Priya" in incomplete.stderr
+
+    config["fixtureReplacements"]["Priya"] = "Sasha"
+    (tmp_path / "evalconfig.json").write_text(json.dumps(config), encoding="utf-8")
+    complete = subprocess.run(  # noqa: S603 - fixed repository script under test
+        [node, str(checker), str(tmp_path), target],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert complete.returncode == 0, complete.stderr
