@@ -4,9 +4,11 @@ from pathlib import Path
 STATIC = Path("src/sessionbuddy/static")
 REVIEW_SOURCE = Path("frontend/src/styles.css")
 
+# Values track DESIGN.md frontmatter. The gate is that every surface shares one
+# action and one focus meaning, not that the hue never changes.
 SHARED_TOKENS = {
-    "action-primary": "#225c9e",
-    "focus-ring": "#2563eb",
+    "action-primary": "#0969da",
+    "focus-ring": "#0969da",
 }
 
 
