@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
   <title id="title">SessionBuddy monochrome mark</title>
-  <desc id="desc">A timeline spine with three session rows; the live session runs longest.</desc>
-  <g fill="none" stroke-width="6" stroke-linecap="round"><path d="M16 20V44" stroke="#182230"/><path d="M30 20H43" stroke="#182230"/><path d="M30 32H48" stroke="#182230"/><path d="M30 44H43" stroke="#182230"/></g>
+  <desc id="desc">An agenda: a day header strip, two session tracks, and one session spanning both.</desc>
+  <g fill="#182230"><rect x="14" y="13" width="36" height="7" rx="3.5"/><rect x="14" y="26" width="16" height="9" rx="3.5" opacity=".55"/><rect x="34" y="26" width="16" height="9" rx="3.5" opacity=".55"/><rect x="14" y="39" width="36" height="11" rx="3.5"/></g>
 </svg>
