@@ -1104,6 +1104,7 @@
     let resolved = null;
     let defaults = null;
     let previewTimer = 0;
+    window.SessionBuddyPage?.onLeave(() => clearTimeout(previewTimer));
     function renderPreview() {
       if (!resolved) return;
       preview.replaceChildren();
@@ -1538,12 +1539,18 @@
   }
   async function load() {
     try {
-      if (!eventId) throw new Error("This event link is invalid.");
-      const session = await api("/api/v1/auth/session");
+      if (!eventId) throw window.SessionBuddyApi.userError("This event link is invalid.");
+      // All three reads start together; failures keep their original handling order.
+      const sessionPromise = api("/api/v1/auth/session");
+      const timeZonePromise = loadEventTimeZone();
+      const submissionsPromise = api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions`);
+      timeZonePromise.catch(() => {});
+      submissionsPromise.catch(() => {});
+      const session = await sessionPromise;
       state.csrf = session.csrf_token;
       state.userId = session.user_id;
       try {
-        state.timeZone = await loadEventTimeZone();
+        state.timeZone = await timeZonePromise;
       } catch (error) {
         const recoveryScope = window.SessionBuddyApi.recoveryScope.event(eventId);
         if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
@@ -1551,7 +1558,7 @@
         throw error;
       }
       byId("round-time-zone").textContent = state.timeZone;
-      const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions`);
+      const result = await submissionsPromise;
       state.submissions = result.data;
       document.body.dataset.eventId = eventId;
       window.dispatchEvent(new Event("sessionbuddy:event-context"));
@@ -1669,11 +1676,12 @@
           selection.addEventListener("change", submissionSelectionChanged);
           selectionCell.append(selection);
         } else {
-          const decided = document.createElement("span");
-          decided.className = "proposal-selection-unavailable";
-          decided.textContent = item.evaluation_round_name
-            ? `Already in ${item.evaluation_round_name}`
-            : "Unavailable";
+          // The reason lives under the title where there is room; the column
+          // keeps a disabled box so the row still reads as not includable.
+          const decided = document.createElement("input");
+          decided.type = "checkbox";
+          decided.disabled = true;
+          decided.setAttribute("aria-label", `Include ${item.proposal_title} (unavailable)`);
           selectionCell.append(decided);
         }
         row.append(selectionCell);
@@ -1688,6 +1696,14 @@
             const metadata = document.createElement("small");
             metadata.textContent = `Submitted ${eventDayLabel(item.submitted_at_ms)} · Receipt ${item.id.slice(0, 8)}`;
             cell.append(identity, metadata);
+            if (item.evaluation_round_id || item.status === "withdrawn") {
+              const unavailable = document.createElement("small");
+              unavailable.className = "proposal-selection-unavailable";
+              unavailable.textContent = item.evaluation_round_name
+                ? `Already in ${item.evaluation_round_name}`
+                : "Unavailable";
+              cell.append(unavailable);
+            }
           }
           if (label === "Status") {
             cell.className = `proposal-inbox__status proposal-inbox__status--${String(value).toLowerCase()}`;
