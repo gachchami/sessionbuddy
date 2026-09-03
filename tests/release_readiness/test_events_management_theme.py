@@ -16,7 +16,12 @@ def test_source_wiring_home_uses_the_event_management_layout() -> None:
     assert '<option value="upcoming">Upcoming first</option>' in page
     assert 'class="organizer-home-table" role="table" aria-label="Events"' in page
     assert 'class="organizer-home-table__body" role="rowgroup"' in page
-    assert 'row.className = "organizer-home-event-row"' in script
+    # The row class now carries a lifecycle modifier (accepted timeline design).
+    row_class = (
+        'row.className = `organizer-home-event-row'
+        ' organizer-home-event-row--${event.status}`'
+    )
+    assert row_class in script
     assert "const requestId = cursor ? state.eventsRequestId : ++state.eventsRequestId" in script
     assert "if (requestId !== state.eventsRequestId) return false" in script
     assert 'params.set("order", state.order)' in script

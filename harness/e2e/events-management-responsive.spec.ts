@@ -92,14 +92,18 @@ test("the mobile event ledger leads to a usable routed editor and preserves a fa
   });
 
   await page.goto("/admin");
-  await expect(page.getByRole("heading", { name: "Organizer workspace", exact: true })).toBeVisible();
+  // Home titles itself with the selected organization; see admin-home-responsive.spec.
+  await expect(page.locator("#workspace-title")).toHaveText("AIEngineer");
   await expect(page.locator(".organizer-home-event-row")).toHaveCount(12);
   const firstEvent = page.locator('.organizer-home-event-row[data-event-id="event-0"]');
   await expect(firstEvent.getByRole("link", { name: "AIEngineer Event 1", exact: true })).toHaveAttribute("href", "/admin/events/event-0");
   await expect(firstEvent.getByText("CFP open · 1 proposal", { exact: true })).toBeVisible();
   await expect(firstEvent.getByText("Agenda live · 0 speakers", { exact: true })).toBeVisible();
-  await expect(firstEvent.getByRole("link", { name: "Manage CFP", exact: true })).toHaveAttribute("href", "/admin/events/event-0/cfp");
   await expect(firstEvent.getByRole("link", { name: "Agenda live · 0 speakers — view public agenda for AIEngineer Event 1" })).toHaveAttribute("href", "/events/event-0/schedule");
+  // Workflow tools live inside the row's More disclosure.
+  await expect(firstEvent.getByRole("link", { name: "Manage CFP", exact: true })).toBeHidden();
+  await firstEvent.locator("summary").click();
+  await expect(firstEvent.getByRole("link", { name: "Manage CFP", exact: true })).toHaveAttribute("href", "/admin/events/event-0/cfp");
   await expect(firstEvent.getByRole("link", { name: "Manage agenda", exact: true })).toHaveAttribute("href", "/admin/events/event-0/agenda");
   await expect(firstEvent.getByRole("link", { name: "Speakers", exact: true })).toHaveAttribute("href", "/admin/events/event-0/speakers");
   await expect(firstEvent.getByRole("link", { name: "Reviewers", exact: true })).toHaveAttribute("href", "/admin/events/event-0/reviewers");
@@ -138,7 +142,7 @@ test("the mobile event ledger leads to a usable routed editor and preserves a fa
   await page.getByRole("button", { name: "Upload logo" }).click();
   await expect(page.locator("#logo-status")).toContainText("Save changes to use this image");
 
-  const save = page.getByRole("button", { name: "Create active event" });
+  const save = page.getByRole("button", { name: "Create event and continue setup" });
   await save.click();
   await expect(page.locator("#editor-status")).toContainText("Reference: request-1");
   await expect(save).toBeEnabled();
@@ -243,4 +247,99 @@ test("a scheduled-event timezone refusal explains the restriction and preserves 
   await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeEnabled();
   expect(attemptedSave).toBe(true);
   expect(eventReads).toBe(readsBeforeSave);
+});
+
+test("the time zone filter narrows the flat select, explains the offset, and never submits", async ({ page }) => {
+  await mockIdentity(page);
+  let createRequests = 0;
+  await page.route(`**/api/v1/admin/organizations/${organizationId}/events`, async (route) => {
+    createRequests += 1;
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "service_unavailable", message: "Event service is temporarily unavailable." }, request_id: "request-2" }),
+    });
+  });
+
+  await page.goto(`/admin/events/new?organization_id=${organizationId}`);
+  const timeZone = page.getByLabel("Time zone");
+  await expect(timeZone).toHaveValue("America/Los_Angeles");
+  await expect(page.locator("#event-time-zone-context")).toContainText("America/Los Angeles");
+  // Every required field is complete, so an Enter that reached the form would create the event.
+  await page.getByLabel("Event name").fill("Filter rehearsal");
+  await page.getByLabel("Attendance format").selectOption("virtual");
+  await page.getByLabel("Location").fill("Online");
+  await page.getByLabel("Description").fill("A rehearsal for the zone filter.");
+  await page.locator('input[name="start_date"]').fill("2027-10-12");
+  await page.locator('input[name="end_date"]').fill("2027-10-13");
+  await expect(page.locator("#nav-state-general")).toHaveText("Complete");
+  await expect(page.locator("#nav-state-date-time")).toHaveText("2 days");
+
+  const filter = page.getByLabel("Find a city or region");
+  await filter.fill("kolk");
+  await expect(page.locator("#time-zone-filter-status")).toHaveText(/^1 of \d+ zones match · Enter selects it$/);
+  await expect(timeZone.locator('option[value="Asia/Kolkata"]')).toHaveCount(1);
+  await expect(timeZone).toHaveValue("America/Los_Angeles");
+  // The required fields above already made the form dirty; typing in the
+  // filter must not change that state or the selected zone.
+  await expect(page.locator("#save-state")).toHaveText("Unsaved changes");
+  // Enter on a single match selects it and moves focus to the select; neither
+  // that Enter nor another on the select submits the form.
+  await filter.press("Enter");
+  await expect(timeZone).toBeFocused();
+  await expect(timeZone).toHaveValue("Asia/Kolkata");
+  await expect(page.locator("#save-state")).toHaveText("Unsaved changes");
+  await timeZone.press("Enter");
+  expect(createRequests).toBe(0);
+  await expect(page.locator("#event-time-zone-context")).toContainText("Asia/Kolkata (UTC+05:30)");
+  await expect(page.locator("#date-time-preview")).toContainText("Asia/Kolkata");
+  await filter.fill("+05:30");
+  await expect(timeZone.locator('option[value="Asia/Kolkata"]')).toHaveCount(1);
+  await expect(timeZone).toHaveValue("Asia/Kolkata");
+  await filter.press("Escape");
+  await expect(filter).toHaveValue("");
+  await expect(page.locator("#time-zone-filter-status")).toHaveText("");
+  await expect(timeZone.locator('option[value="UTC"]')).toHaveCount(1);
+  await expect(timeZone).toHaveValue("Asia/Kolkata");
+
+  await page.locator('#event-editor-nav [data-section-link="branding"]').click();
+  await expect(page.locator("#branding")).toHaveAttribute("open", "");
+  await expect(page.locator('#event-editor-nav [data-section-link="branding"]')).toHaveAttribute("aria-current", "location");
+  await expect(page).toHaveURL(/#branding$/);
+
+  await page.getByRole("button", { name: "Create event and continue setup" }).click();
+  await expect(page.locator("#editor-status")).toContainText("Reference: request-2");
+  expect(createRequests).toBe(1);
+});
+
+test("routed settings keep a live summary and open the deep-linked section", async ({ page }) => {
+  await mockIdentity(page);
+  await page.route("**/api/v1/admin/events/event-0", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(eventFixture()) }));
+
+  await page.goto("/admin/events/event-0/settings#email");
+  await expect(page.getByRole("heading", { name: "AIEngineer Event 1" })).toBeVisible();
+  await expect(page.locator("#email")).toHaveAttribute("open", "");
+  await expect(page.locator('#event-editor-nav [data-section-link="email"]')).toHaveAttribute("aria-current", "location");
+  await expect(page.locator("#email-summary-note")).toHaveText("Optional · uses SessionBuddy <events@example.test>");
+  await expect(page.locator("#branding")).not.toHaveAttribute("open", "");
+
+  const summary = page.locator("#event-summary-panel");
+  await expect(summary).toBeVisible();
+  await expect(page.locator("#summary-name")).toHaveText("AIEngineer Event 1");
+  await expect(page.locator("#summary-status")).toHaveText("Active");
+  await expect(page.locator("#lifecycle-state")).toHaveText("active");
+  await expect(page.locator("#nav-state-lifecycle")).toHaveText("Active");
+  await expect(page.locator("#summary-dates")).toContainText("Asia/Kolkata");
+  await expect(page.locator("#summary-location")).toHaveText("Bengaluru · Hybrid");
+  await expect(page.locator("#summary-organization")).toHaveText("AIEngineer");
+  await expect(page.locator("#nav-state-date-time")).toHaveText("2 days");
+
+  await page.getByLabel("Event name").fill("Renamed summit");
+  await expect(page.locator("#summary-name")).toHaveText("Renamed summit");
+  // The heading only changes once the rename is saved.
+  await expect(page.getByRole("heading", { name: "AIEngineer Event 1" })).toBeVisible();
+  await page.getByLabel("Event name").fill("");
+  await expect(page.locator("#summary-name")).toHaveText("Untitled event");
+  await expect(page.locator("#nav-state-general")).toHaveText("Needs details");
+  await expect(page.locator("#save-state")).toHaveText("Unsaved changes");
 });

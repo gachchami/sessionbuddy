@@ -4,32 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Organizer workspace · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=91">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=28">
-  <link rel="stylesheet" href="/admin/home/assets/home.css?v=08f958efd373">
-  <script src="/app-shell/assets/api-client.js?v=10" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=38" defer></script>
-  <script src="/app-shell/assets/activity-format.js?v=1044747b380e" defer></script>
-  <script src="/admin/home/assets/home.js?v=8cf3c6974754" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=112">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=38">
+  <link rel="stylesheet" href="/admin/home/assets/home.css?v=f158d9d5fc8c">
+  <script src="/app-shell/assets/api-client.js?v=12" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=45" defer></script>
+  <script src="/app-shell/assets/activity-format.js?v=83538309eb69" defer></script>
+  <script src="/admin/home/assets/home.js?v=2b58c0cd52f7" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--home">
-  <!-- Design contract — seed 7b4936a9. TaskFlow is the pinned visual authority:
-  detached white navigation and header, pale blue canvas, 12–16px rounded work
-  panels, compact DM Sans, muted blue selection, pastel states and blue-gradient
-  pill actions. Adapt the real organizer, reviewer and speaker workflows without
-  inventing calendar data, metrics, meetings or commercial claims. Preserve all
-  routing, roles, interaction hooks, keyboard affordances and truthful states.
-  Home is a compact event workbench: one full date, no redundant date tile;
-  event titles and one truthful next action lead, workflow shortcuts remain visible,
-  and Manage/Clone disclose under More. Neutral activity recedes into a timeline.
-  Organization search and switching remain available even with one organization.
-  Mobile retains attention and readable controls. FINISH: inspect desktop and mobile, challenge the rendered reference
-  fidelity independently, resolve material findings and disclose remaining limits. -->
+  <!-- Home owns organization identity; Events owns the filtered result count.
+  Keep switching, permissions, and action destinations independent of layout. -->
   <a class="skip-link" href="#events">Skip to events</a>
   <header data-auth-shell></header>
+
   <main id="main" class="shell page organizer-main" tabindex="-1">
       <div id="workspace-heading" class="organizer-home-heading__identity">
-        <h1>Organizer workspace</h1>
+        <h1 id="workspace-title">Your workspace</h1>
         <p id="workspace-summary">Loading your organizations…</p>
       </div>
     <p id="status" class="status status-compact organizer-home-status" role="status" aria-live="polite">Loading your workspace…</p>
@@ -49,7 +40,7 @@
       <section id="events" class="organizer-home-events" aria-labelledby="events-title" tabindex="-1">
         <div class="organizer-home-events__heading">
           <div class="organizer-home-events__identity">
-            <h2 id="events-title" tabindex="-1">Loading organization…</h2>
+            <h2 id="events-title" tabindex="-1">Events</h2>
             <p><span id="event-count" class="organizer-home-count" aria-live="polite"></span></p>
           </div>
           <div class="organizer-home-heading">
@@ -88,6 +79,7 @@
           </label>
           </details>
         </div>
+        <nav id="event-month-nav" class="organizer-home-month-nav" aria-label="Jump to month" hidden></nav>
         <div id="event-table" class="organizer-home-table" role="table" aria-label="Events" aria-busy="true">
           <div class="organizer-home-table__header" role="rowgroup">
             <div role="row">
@@ -98,7 +90,9 @@
               <span id="event-column-actions" role="columnheader">Actions</span>
             </div>
           </div>
-          <div id="event-list" class="organizer-home-table__body" role="rowgroup"></div>
+
+          <div id="event-list" class="organizer-home-table__body" role="rowgroup"><div class="organizer-home-month organizer-home-month--skeleton" aria-hidden="true"><div class="organizer-home-month__label"><span class="sb-skeleton sb-skeleton--text"></span></div><div class="organizer-home-month__rows"><div class="organizer-home-event-row organizer-home-event-row--skeleton"><div class="organizer-home-event-date"><span class="sb-skeleton sb-skeleton--text"></span></div><div class="organizer-home-event-identity"><span class="sb-skeleton sb-skeleton--title"></span><span class="sb-skeleton sb-skeleton--text"></span></div><div class="organizer-home-event-actions"><span class="sb-skeleton sb-skeleton--button"></span></div></div><div class="organizer-home-event-row organizer-home-event-row--skeleton"><div class="organizer-home-event-date"><span class="sb-skeleton sb-skeleton--text"></span></div><div class="organizer-home-event-identity"><span class="sb-skeleton sb-skeleton--title"></span><span class="sb-skeleton sb-skeleton--text"></span></div><div class="organizer-home-event-actions"><span class="sb-skeleton sb-skeleton--button"></span></div></div><div class="organizer-home-event-row organizer-home-event-row--skeleton"><div class="organizer-home-event-date"><span class="sb-skeleton sb-skeleton--text"></span></div><div class="organizer-home-event-identity"><span class="sb-skeleton sb-skeleton--title"></span><span class="sb-skeleton sb-skeleton--text"></span></div><div class="organizer-home-event-actions"><span class="sb-skeleton sb-skeleton--button"></span></div></div></div></div></div>
+
         </div>
         <p id="event-list-empty" class="empty organizer-home-empty" aria-live="polite">Loading events…</p>
       </section>
@@ -108,5 +102,6 @@
       </div>
     </div>
   </main>
+
 </body>
 </html>

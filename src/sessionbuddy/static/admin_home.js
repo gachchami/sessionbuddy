@@ -128,7 +128,7 @@
 
   function eventRow(event) {
     const row = document.createElement("div");
-    row.className = "organizer-home-event-row";
+    row.className = `organizer-home-event-row organizer-home-event-row--${event.status}`;
     row.setAttribute("role", "row");
     row.dataset.eventId = event.id;
 
@@ -139,6 +139,17 @@
     name.className = "organizer-home-event-name";
     name.href = `/admin/events/${encodeURIComponent(event.id)}`;
     name.textContent = event.name;
+    if (event.logo_url) {
+      const logo = document.createElement("img");
+      logo.className = "organizer-home-event-logo";
+      logo.alt = "";
+      logo.width = 32;
+      logo.height = 32;
+      logo.loading = "lazy";
+      logo.addEventListener("error", () => logo.remove(), { once: true });
+      logo.src = event.logo_url;
+      nameLine.append(logo);
+    }
     nameLine.append(name);
     identity.append(nameLine);
     const labels = document.createElement("div");
@@ -181,9 +192,14 @@
       const agendaLabel = agendaReady
         ? `Agenda ${scheduleStatus === "published" ? "live" : "ready"} · ${speakerCount} speaker${speakerCount === 1 ? "" : "s"}`
         : "Agenda not built";
+      // A setup-needed state links to where the work happens, so the label is
+      // the next action rather than a dead end.
+      const setupPrefix = `/admin/events/${encodeURIComponent(event.id)}`;
+      const cfpHref = cfpReady ? publicCfpHref : `${setupPrefix}/cfp`;
+      const agendaHref = agendaReady ? publicAgendaHref : `${setupPrefix}/agenda`;
       labels.append(
-        readinessLabel(cfpLabel, cfpReady ? "ready" : "warning", publicCfpHref, publicCfpHref ? `${cfpLabel} — view public CFP for ${event.name}` : ""),
-        readinessLabel(agendaLabel, agendaReady ? "ready" : "warning", publicAgendaHref, publicAgendaHref ? `${agendaLabel} — view public agenda for ${event.name}` : ""),
+        readinessLabel(cfpLabel, cfpReady ? "ready" : "warning", cfpHref, cfpHref ? (cfpReady ? `${cfpLabel} — view public CFP for ${event.name}` : `${cfpLabel} — set up the CFP for ${event.name}`) : ""),
+        readinessLabel(agendaLabel, agendaReady ? "ready" : "warning", agendaHref, agendaHref ? (agendaReady ? `${agendaLabel} — view public agenda for ${event.name}` : `${agendaLabel} — build the agenda for ${event.name}`) : ""),
       );
     }
     program.append(labels);
@@ -234,19 +250,87 @@
       menu.append(duplicate);
     }
     actions.append(tools);
-    const metadata = document.createElement("div");
-    metadata.className = "organizer-home-event-metadata";
-    metadata.setAttribute("role", "presentation");
-    metadata.append(statusCell, date);
-    row.append(identity, metadata, program, actions);
+    // Timeline row: the date leads, then the event with its location and
+    // readiness on one meta line, then the actions.
+    const meta = document.createElement("div");
+    meta.className = "organizer-home-event-meta";
+    meta.append(statusCell, program);
+    identity.append(meta);
+    row.append(date, identity, actions);
     return row;
+  }
+
+  function monthGroupOf(event) {
+    const startValue = event.status === "draft" ? event.draft_starts_at_ms : event.starts_at_ms;
+    if (startValue == null) return { key: "unscheduled", month: "Dates not set", year: "" };
+    const date = new Date(startValue);
+    const timeZone = event.time_zone || "UTC";
+    const month = new Intl.DateTimeFormat(undefined, { month: "long", timeZone }).format(date);
+    const year = new Intl.DateTimeFormat(undefined, { year: "numeric", timeZone }).format(date);
+    return { key: `${year}-${month}`, month, year };
+  }
+
+  // Events arrive already sorted, so grouping consecutive rows by month keeps
+  // the chosen order intact for both "Upcoming first" and "Newest first".
+  function groupEventsByMonth(events) {
+    const groups = [];
+    for (const event of events) {
+      const info = monthGroupOf(event);
+      const last = groups[groups.length - 1];
+      if (last && last.key === info.key) last.events.push(event);
+      else groups.push({ ...info, events: [event] });
+    }
+    return groups;
+  }
+
+  function monthAnchorId(group) {
+    return `month-${String(group.key).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  }
+
+  // Accepted list navigation: chips above the table jump to each month band.
+  function renderMonthNav(groups) {
+    const nav = byId("event-month-nav");
+    nav.replaceChildren(...groups.map((group) => {
+      const link = document.createElement("a");
+      link.href = `#${monthAnchorId(group)}`;
+      link.textContent = group.year ? `${group.month} ${group.year}` : group.month;
+      const count = document.createElement("small");
+      count.textContent = String(group.events.length);
+      count.setAttribute("aria-label", `${group.events.length} event${group.events.length === 1 ? "" : "s"}`);
+      link.append(count);
+      return link;
+    }));
+    nav.hidden = groups.length === 0;
+  }
+
+  function renderEventGroups(groups) {
+    return groups.map((group) => {
+      const section = document.createElement("div");
+      section.className = "organizer-home-month";
+      section.id = monthAnchorId(group);
+      section.setAttribute("role", "presentation");
+      const label = document.createElement("div");
+      label.className = "organizer-home-month__label";
+      label.setAttribute("aria-hidden", "true");
+      label.textContent = group.month;
+      const detail = document.createElement("small");
+      detail.textContent = `${group.year ? `${group.year} · ` : ""}${group.events.length} event${group.events.length === 1 ? "" : "s"}`;
+      label.append(detail);
+      const rows = document.createElement("div");
+      rows.className = "organizer-home-month__rows";
+      rows.append(...group.events.map(eventRow));
+      section.append(label, rows);
+      return section;
+    });
   }
 
   function renderEvents() {
     const table = byId("event-table");
     const list = byId("event-list");
     const empty = byId("event-list-empty");
-    list.replaceChildren(...state.events.map(eventRow));
+    const groups = groupEventsByMonth(state.events);
+    list.replaceChildren(...renderEventGroups(groups));
+    renderMonthNav(groups);
     table.hidden = state.events.length === 0;
     table.setAttribute("aria-busy", "false");
     empty.hidden = state.events.length > 0;
@@ -270,7 +354,15 @@
       byId("event-table").setAttribute("aria-busy", "true");
       byId("event-list-empty").hidden = true;
     }
-    const result = await api(`/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/events?${params}`);
+    let result;
+    try {
+      result = await api(`/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/events?${params}`);
+    } catch (error) {
+      // Tag the failure with its request so a superseded refresh cannot paint
+      // an error over the newer list that already rendered.
+      if (error && typeof error === "object") error.eventsRequestId = requestId;
+      throw error;
+    }
     if (requestId !== state.eventsRequestId) return false;
     state.events = cursor ? [...state.events, ...result.data] : result.data;
     state.nextCursor = result.next_cursor;
@@ -284,6 +376,7 @@
     try {
       return await loadEventPage(null, announce);
     } catch (error) {
+      if (error?.eventsRequestId !== undefined && error.eventsRequestId !== state.eventsRequestId) return false;
       byId("event-table").setAttribute("aria-busy", "false");
       if (!state.events.length) {
         byId("event-table").hidden = true;
@@ -301,7 +394,7 @@
     aside.className = "organizer-home-changes";
     aside.setAttribute("aria-labelledby", "recent-changes-title");
     aside.tabIndex = -1;
-    aside.innerHTML = `<div class="organizer-home-changes__heading"><h2 id="recent-changes-title">Recent changes</h2><a href="/admin/organization#organization-activity">See all</a></div><p class="organizer-home-changes-state" role="status">Loading recent changes…</p>`;
+    aside.innerHTML = `<div class="organizer-home-changes__heading"><h2 id="recent-changes-title">Recent activity</h2><a href="/admin/organization?organization_id=${encodeURIComponent(state.organizationId)}#organization-activity">See all</a></div><p class="organizer-home-changes-state" role="status">Loading recent activity…</p>`;
     return aside;
   }
 
@@ -316,7 +409,7 @@
     link.id = "skip-recent-changes";
     link.className = "skip-link";
     link.href = "#recent-changes";
-    link.textContent = "Skip to recent changes";
+    link.textContent = "Skip to recent activity";
     document.querySelector(".skip-link").after(link);
   }
 
@@ -336,7 +429,7 @@
       if (requestId !== state.activityRequestId) return;
       const activities = result.data.slice(0, 4);
       if (!activities.length) {
-        aside.querySelector(".organizer-home-changes-state").textContent = "No recent changes.";
+        aside.querySelector(".organizer-home-changes-state").textContent = "No recent activity.";
         return;
       }
       const list = document.createElement("ol");
@@ -344,14 +437,37 @@
       for (const activity of activities) {
         const item = document.createElement("li");
         item.className = "organizer-home-change";
-        const sentence = document.createElement("strong");
-        sentence.textContent = window.SessionBuddyActivityFormat.sentence(activity);
+        // Accepted activity design: an initials marker, then the sentence with
+        // the actor and subject in ink so who-did-what reads at a glance. The
+        // pieces mirror SessionBuddyActivityFormat.sentence() word for word.
+        const format = window.SessionBuddyActivityFormat;
+        const actorName = String(activity.actor_name || "Someone");
+        const mark = document.createElement("span");
+        mark.className = "organizer-home-change__mark";
+        mark.setAttribute("aria-hidden", "true");
+        mark.textContent = actorName.split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("").toUpperCase();
+        const body = document.createElement("span");
+        body.className = "organizer-home-change__body";
+        const text = document.createElement("span");
+        text.className = "organizer-home-change__text";
+        const actor = document.createElement("span");
+        actor.className = "organizer-home-change__actor";
+        actor.textContent = actorName;
+        const ownRecord = format.ownRecord(activity);
+        text.append(actor, ` ${format.verb(activity.operation)} ${ownRecord ? "their " : ""}${format.resourceLabel(activity.resource_type)}`);
+        if (activity.subject_name && !ownRecord) {
+          const subject = document.createElement("span");
+          subject.className = "organizer-home-change__subject";
+          subject.textContent = activity.subject_name;
+          text.append(" ", subject);
+        }
         const time = document.createElement("time");
         const date = new Date(activity.occurred_at_ms);
         time.dateTime = date.toISOString();
         time.title = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
-        time.textContent = window.SessionBuddyActivityFormat.relativeTime(activity.occurred_at_ms);
-        item.append(sentence, time);
+        time.textContent = format.relativeTime(activity.occurred_at_ms);
+        body.append(text, time);
+        item.append(mark, body);
         list.append(item);
       }
       aside.querySelector(".organizer-home-changes-state").replaceWith(list);
@@ -359,7 +475,7 @@
       if (requestId !== state.activityRequestId) return;
       const status = aside.querySelector(".organizer-home-changes-state");
       status.classList.add("error");
-      status.textContent = window.SessionBuddyApi.messageWithReference("Recent changes are temporarily unavailable.", error);
+      status.textContent = window.SessionBuddyApi.messageWithReference("Recent activity is temporarily unavailable.", error);
     }
   }
 
@@ -370,13 +486,19 @@
   function syncOrganizationHeader() {
     const organization = selectedOrganization();
     const organizationName = organization?.name || state.session.organization_name || "Events";
-    byId("events-title").textContent = organizationName;
+    byId("workspace-title").textContent = organizationName;
+    document.title = `${organizationName} · SessionBuddy`;
+    const pending = Number(organization?.pending_review_count || 0);
+    byId("workspace-summary").textContent = pending
+      ? `${pending} review item${pending === 1 ? " needs" : "s need"} attention`
+      : "No reviews awaiting action";
     const manager = canManageOrganization(state.organizationId);
     byId("new-event").hidden = !manager;
     byId("new-event").href = `/admin/events/new?organization_id=${encodeURIComponent(state.organizationId)}`;
     byId("new-event").setAttribute("aria-label", `Create event in ${organizationName}`);
     byId("new-event").textContent = "Create event";
     byId("organization-settings").hidden = !manager;
+    byId("organization-settings").href = `/admin/organization?organization_id=${encodeURIComponent(state.organizationId)}`;
     byId("organization-settings").setAttribute("aria-label", `Organization settings for ${organizationName}`);
     byId("organization-picker").value = state.organizationId;
     document.querySelectorAll("[data-organization-id]").forEach((button) => {
@@ -427,9 +549,8 @@
     syncOrganizationHeader();
   }
 
-  async function loadDashboard() {
-    const organizations = (await api("/api/v1/admin/organizations")).data;
-    if (!organizations.length) throw new Error("Your organization workspace is not available yet. Please try again or contact an administrator.");
+  async function loadDashboard(organizations) {
+    if (!organizations.length) throw window.SessionBuddyApi.userError("Your organization workspace is not available yet. Please try again or contact an administrator.");
     state.organizations = organizations;
     state.organizationMetrics = new Map(organizations.map((organization) => [organization.id, organization]));
     const validIds = new Set(organizations.map((organization) => organization.id));
@@ -449,9 +570,6 @@
     byId("organization-picker-label").hidden = false;
     byId("organization-rail").hidden = false;
     byId("organization-count").textContent = String(organizations.length);
-    const totalEvents = organizations.reduce((total, organization) => total + organization.event_count, 0);
-    const totalAttention = organizations.reduce((total, organization) => total + organization.pending_review_count, 0);
-    byId("workspace-summary").textContent = `${totalEvents} event${totalEvents === 1 ? "" : "s"} · ${totalAttention} review item${totalAttention === 1 ? " needs" : "s need"} attention`;
     renderOrganizationList();
     syncControls();
     await switchOrganization(state.organizationId);
@@ -532,8 +650,14 @@
 
   async function initialize() {
     readUrlState();
-    state.session = await api("/api/v1/auth/session");
-    await loadDashboard();
+    // The organization list does not depend on the session body, so both
+    // requests share one round trip instead of forming a waterfall.
+    const [session, organizations] = await Promise.all([
+      api("/api/v1/auth/session"),
+      api("/api/v1/admin/organizations").then((response) => response.data),
+    ]);
+    state.session = session;
+    await loadDashboard(organizations);
     if (location.hash === "#event-form") {
       location.replace(`/admin/events/new?organization_id=${encodeURIComponent(state.organizationId)}`);
     }
@@ -545,7 +669,9 @@
       byId("event-table").hidden = true;
       byId("event-list-empty").hidden = false;
       byId("event-list-empty").textContent = "Events are temporarily unavailable. Reload the page to try again.";
-      setStatus(window.SessionBuddyApi.messageWithReference("We couldn’t load this workspace.", error), true);
+      setStatus(error?.code === "user_message"
+        ? error.message
+        : window.SessionBuddyApi.messageWithReference("We couldn’t load this workspace.", error), true);
     }
   });
 })();

@@ -25,7 +25,10 @@ def test_event_empty_state_is_outside_the_aria_table_and_live() -> None:
     empty_position = markup.index('id="event-list-empty"')
     assert empty_position > table_end
     assert 'id="event-list-empty" class="empty organizer-home-empty" aria-live="polite"' in markup
-    assert "list.replaceChildren(...state.events.map(eventRow))" in javascript
+    # Rows are rendered into the aria rowgroup via eventRow, now grouped by month
+    # (accepted timeline design); the empty state stays outside the table.
+    assert "list.replaceChildren(...renderEventGroups(groups))" in javascript
+    assert "group.events.map(eventRow)" in javascript
     assert "empty.textContent = state.query" in javascript
 
 

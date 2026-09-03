@@ -84,8 +84,12 @@ def test_source_wiring_home_recent_changes_is_manager_only_and_uses_shared_forma
     assert "slot.replaceChildren();" in script
     assert 'activity.operation !== "read"' not in script
     assert ".slice(0, 4)" in script
-    assert "window.SessionBuddyActivityFormat.sentence(activity)" in script
-    assert "No recent changes." in script
-    assert "Recent changes are temporarily unavailable." in script
+    # The rail composes actor / verb / subject spans (accepted marker-column design)
+    # from the same shared formatter, aliased locally, instead of one sentence string.
+    assert "const format = window.SessionBuddyActivityFormat;" in script
+    assert "format.verb(activity.operation)" in script
+    assert "format.resourceLabel(activity.resource_type)" in script
+    assert "No recent activity." in script
+    assert "Recent activity is temporarily unavailable." in script
     for label in ("call_for_speaker_form", "evaluation_round", "accepted_session", "agenda_item"):
         assert f"{label}:" in formatter
