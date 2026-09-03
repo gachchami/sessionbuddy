@@ -39,3 +39,29 @@ def test_source_wiring_organization_settings_has_a_dedicated_organizer_surface()
     assert update_path in script
     assert 'method: "PATCH"' in script
     assert 'body: JSON.stringify({ name:' in script
+
+
+def test_source_wiring_organization_settings_keep_the_access_and_transfer_contract() -> None:
+    page = (STATIC / "organization_admin.html").read_text(encoding="utf-8")
+    script = (STATIC / "organization_admin.js").read_text(encoding="utf-8")
+
+    # One organization is edited at a time; its name is the section heading and
+    # the switcher only appears for multi-organization accounts.
+    assert 'id="organization-switcher"' in page
+    assert 'id="organization-context"' in page
+    assert 'byId("organization-settings-title").textContent = organization.name' in script
+    assert 'byId("organization-switcher-label").hidden = state.organizations.length < 2' in script
+    # The mutation contract is unchanged.
+    assert "/ownership-transfers`" in script
+    assert "function disarmTransfer(form)" in script
+    assert 'button.textContent = `Confirm transfer to ${email}`' in script
+    idempotency = (
+        '"Idempotency-Key": form.dataset.requestKey'
+        " || (form.dataset.requestKey = crypto.randomUUID())"
+    )
+    assert idempotency in script
+    rename_body = (
+        "body: JSON.stringify({ name: form.elements.name.value.trim(),"
+        " version: Number(form.dataset.version) })"
+    )
+    assert rename_body in script

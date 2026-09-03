@@ -4,27 +4,45 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Organization settings · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=91">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=28">
-  <script src="/app-shell/assets/api-client.js?v=10" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=38" defer></script>
-  <script src="/app-shell/assets/activity-format.js?v=1044747b380e" defer></script>
-  <script src="/admin/organization/assets/organization.js?v=2" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=112">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=38">
+  <script src="/app-shell/assets/api-client.js?v=12" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=45" defer></script>
+  <script src="/app-shell/assets/activity-format.js?v=83538309eb69" defer></script>
+  <script src="/admin/organization/assets/organization.js?v=3" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--organization">
   <a class="skip-link" href="#main">Skip to organization settings</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell page organizer-main" tabindex="-1">
-    <div class="page-heading page-heading--compact account-context-heading"><div><h1>Organization settings</h1></div></div>
+  <main id="main" class="shell page organizer-main organization-settings" tabindex="-1">
+    <div class="page-heading page-heading--compact account-context-heading organization-settings__heading">
+      <div><h1>Organization settings</h1><p id="organization-context" class="lede">Loading your organizations…</p></div>
+      <label id="organization-switcher-label" class="organization-settings__switcher" hidden><span>Organization</span><select id="organization-switcher"></select></label>
+    </div>
     <p id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1"></p>
-    <section id="organization-settings" class="organizer-section" aria-labelledby="organization-settings-title" hidden>
-      <div class="section-heading"><div><h2 id="organization-settings-title">Organization</h2><p class="section-summary">Organization identity, ownership, and administrators.</p></div></div>
-      <div id="organization-settings-list" class="entity-grid"></div>
-    </section>
-    <section id="organization-activity" class="directory-section organizer-section" aria-labelledby="organization-activity-title" hidden>
-      <div class="section-heading"><div><h2 id="organization-activity-title">Organization activity</h2><p class="section-summary">Successful API activity across organizers, events, speakers, reviewers, and proposals.</p></div></div>
-      <ol id="organization-activity-list" class="item-list organization-activity-list" aria-live="polite"><li class="help">Loading activity…</li></ol>
-    </section>
+    <div class="organization-settings__grid">
+      <section id="organization-settings" class="organizer-section organization-settings__main" aria-labelledby="organization-settings-title">
+        <div class="section-heading"><div><h2 id="organization-settings-title" tabindex="-1">Organization</h2><p id="organization-summary" class="section-summary">Loading…</p></div></div>
+        <div id="organization-settings-list" class="organization-settings__stack"><p class="help" data-loading-placeholder>Loading organization settings…</p></div>
+      </section>
+
+      <section id="organization-activity" class="organizer-section organization-activity" aria-labelledby="organization-activity-title">
+        <div class="section-heading"><div><h2 id="organization-activity-title">Organization activity</h2><p id="organization-activity-scope" class="section-summary">Successful changes across organizers, events, speakers, reviewers, and proposals.</p></div></div>
+        <div id="organization-activity-filters" class="organization-activity__filters" role="group" aria-label="Filter activity" hidden>
+          <button type="button" class="organization-activity__filter" data-activity-filter="all" aria-pressed="true">All</button>
+          <button type="button" class="organization-activity__filter" data-activity-filter="events" aria-pressed="false" hidden>Events</button>
+          <button type="button" class="organization-activity__filter" data-activity-filter="cfp" aria-pressed="false" hidden>Call for proposals</button>
+          <button type="button" class="organization-activity__filter" data-activity-filter="proposals" aria-pressed="false" hidden>Proposals &amp; reviews</button>
+          <button type="button" class="organization-activity__filter" data-activity-filter="speakers" aria-pressed="false" hidden>Speakers</button>
+          <button type="button" class="organization-activity__filter" data-activity-filter="agenda" aria-pressed="false" hidden>Agenda</button>
+          <button type="button" class="organization-activity__filter" data-activity-filter="invitations" aria-pressed="false" hidden>Invitations</button>
+          <button type="button" class="organization-activity__filter" data-activity-filter="access" aria-pressed="false" hidden>Access</button>
+        </div>
+        <p id="organization-activity-summary" class="help organization-activity__summary" role="status" aria-live="polite">Loading activity…</p>
+        <ol id="organization-activity-list" class="organization-activity-list"><li class="help" data-loading-placeholder>Loading activity…</li></ol>
+      </section>
+
+    </div>
   </main>
 </body>
 </html>

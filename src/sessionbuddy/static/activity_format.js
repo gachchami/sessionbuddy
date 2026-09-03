@@ -6,11 +6,13 @@
     event: "event",
     proposal: "proposal",
     invitation: "invitation",
+    resource_access_grant: "organizer access",
     call_for_speaker_form: "call for proposals",
     evaluation_round: "evaluation round",
     evaluation: "review",
     evaluation_assignment: "review assignment",
     event_speaker: "speaker",
+    speaker_asset_version: "speaker file",
     accepted_session: "session",
     speaker_task: "speaker task",
     schedule_revision: "schedule",
@@ -27,10 +29,29 @@
     return VERBS[operation] || String(operation || "changed");
   }
 
+  function sameName(left, right) {
+    return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+  }
+
+  // "Nora updated invitation Nora" reads as an echo; when the actor is the
+  // subject, the sentence says "their" instead of repeating the name.
+  function ownRecord(activity) {
+    return Boolean(activity.subject_name) && sameName(activity.actor_name, activity.subject_name);
+  }
+
+  // With no subject the bare label reads as a fragment ("updated schedule"), so
+  // an unnamed thing takes an article: "a" for something new, "the" otherwise.
+  function article(operation, label) {
+    if (operation === "create") return /^[aeiou]/i.test(label) ? "an " : "a ";
+    return "the ";
+  }
+
   function sentence(activity) {
     const actor = String(activity.actor_name || "Someone");
-    const subject = activity.subject_name ? ` ${activity.subject_name}` : "";
-    return `${actor} ${verb(activity.operation)} ${resourceLabel(activity.resource_type)}${subject}`;
+    const label = resourceLabel(activity.resource_type);
+    if (ownRecord(activity)) return `${actor} ${verb(activity.operation)} their ${label}`;
+    if (!activity.subject_name) return `${actor} ${verb(activity.operation)} ${article(activity.operation, label)}${label}`;
+    return `${actor} ${verb(activity.operation)} ${label} ${activity.subject_name}`;
   }
 
   function relativeTime(occurredAtMs, now = Date.now()) {
@@ -46,5 +67,5 @@
     return formatter.format(elapsedSeconds, "second");
   }
 
-  window.SessionBuddyActivityFormat = Object.freeze({ RESOURCE_LABELS, resourceLabel, verb, sentence, relativeTime });
+  window.SessionBuddyActivityFormat = Object.freeze({ RESOURCE_LABELS, resourceLabel, verb, ownRecord, article, sentence, relativeTime });
 })();
