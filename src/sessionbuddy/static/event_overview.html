@@ -4,33 +4,32 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event overview · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=91">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=28">
-  <script src="/app-shell/assets/api-client.js?v=10" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=38" defer></script>
-  <script src="/app-shell/assets/activity-format.js?v=1044747b380e" defer></script>
-  <script src="/admin/event-overview/assets/event-overview.js?v=85646b72956e" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=112">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=38">
+  <script src="/app-shell/assets/api-client.js?v=12" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=45" defer></script>
+  <script src="/app-shell/assets/activity-format.js?v=83538309eb69" defer></script>
+  <script src="/admin/event-overview/assets/event-overview.js?v=bed8369b701b" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--event-overview is-loading">
   <a class="skip-link" href="#main">Skip to event overview</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell page organizer-main" tabindex="-1">
+  <main id="main" data-sb-swappable class="shell page organizer-main" tabindex="-1">
     <section id="event-public-header" class="event-command-header" aria-labelledby="event-name">
       <div class="event-command-header__content"><div class="event-command-header__copy"><h1 id="event-name"><span class="skeleton-text">Loading event</span></h1><p id="event-summary" class="lede"></p></div><div id="event-actions" class="event-command-header__actions" hidden><a id="edit-event" class="button secondary" href="#">Edit event</a><a id="cfp-action" class="button event-command-header__primary" href="#" hidden>Edit CFP</a><a id="public-schedule" class="button secondary" href="#">Public event page</a></div></div>
     </section>
     <div id="status" class="status event-overview-status" role="status" aria-live="polite">Loading event…</div>
     <section class="event-overview-now organizer-callout">
       <div id="next-step" class="event-next-step" aria-labelledby="next-step-title"><h2 id="next-step-title">Open your call for proposals</h2><p id="next-step-summary" class="result">Create and publish the proposal form speakers will use.</p><a id="next-step-action" class="button" href="#">Set up CFP</a></div>
-      <dl class="event-signal-list organizer-metrics" aria-label="Event status">
-        <div class="event-signal event-signal--proposals"><dt><a id="proposals-link" href="#">Proposals</a></dt><dd id="proposal-count">—</dd><dd><small id="proposal-note">Loading</small></dd></div>
-        <div class="event-signal event-signal--speakers"><dt><a id="speakers-link" href="#">Speakers</a></dt><dd id="speaker-count">—</dd><dd><small id="speaker-note">Loading</small></dd></div>
-        <div class="event-signal event-signal--agenda"><dt><a id="agenda-link" href="#">Agenda</a></dt><dd id="agenda-count">—</dd><dd><small id="agenda-note">Loading</small></dd></div>
-        <div class="event-signal event-signal--cfp"><dt><a id="cfp-link" href="#">CFP</a></dt><dd id="cfp-state">—</dd><dd><small id="cfp-note">Loading</small></dd></div>
-      </dl>
+      <section id="launch-readiness" class="event-readiness" aria-labelledby="launch-readiness-title" hidden>
+        <div class="event-readiness__heading"><h2 id="launch-readiness-title">Launch readiness</h2><p id="launch-readiness-progress" class="event-readiness__progress"></p></div>
+        <p class="event-readiness__lede">Each part publishes on its own. Work through them in order; every destination stays reachable from the sidebar.</p>
+        <ol id="launch-readiness-steps" class="event-readiness__steps"></ol>
+      </section>
     </section>
     <section id="event-activity" class="event-activity-card" aria-labelledby="event-activity-title">
-      <div class="event-activity-card__heading"><div><h2 id="event-activity-title">Recent changes</h2><p>Changes to this event, its proposals, reviews, speakers, and program.</p></div></div>
-      <p id="event-activity-state" class="event-activity-state" role="status" aria-live="polite">Loading recent changes…</p>
+      <div class="event-activity-card__heading"><div><h2 id="event-activity-title">Recent activity</h2><p>Everything that changed in this event.</p></div></div>
+      <p id="event-activity-state" class="event-activity-state" role="status" aria-live="polite">Loading recent activity…</p>
       <ol id="event-activity-list" class="event-activity-list" hidden></ol>
     </section>
   </main>
