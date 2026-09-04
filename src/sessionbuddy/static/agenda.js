@@ -144,6 +144,11 @@
       timeZone: "UTC", weekday: "long", month: "short", day: "numeric",
     }).format(new Date(`${date}T00:00:00Z`));
   }
+  function weekLabel(date) {
+    return `Week of ${new Intl.DateTimeFormat(undefined, {
+      timeZone: "UTC", month: "short", day: "numeric", year: "numeric",
+    }).format(new Date(`${date}T00:00:00Z`))}`;
+  }
   function groupKey(item, view) {
     if (view === "room") return item.room_name || "Unassigned room";
     if (view === "track") return item.track_name || "No track";
@@ -151,15 +156,12 @@
       return eventDate(item.start_at_ms);
     }
     if (view === "week") {
-      const date = new Date(item.start_at_ms);
-      date.setUTCDate(date.getUTCDate() - date.getUTCDay());
-      return `Week of ${
-        format(date.getTime(), {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })
-      }`;
+      // Bucket by the event's local calendar week, keyed as an ISO date so
+      // groups sort chronologically; a late-evening session west of UTC must
+      // not slip into the following week.
+      const local = new Date(`${eventDate(item.start_at_ms)}T00:00:00Z`);
+      local.setUTCDate(local.getUTCDate() - local.getUTCDay());
+      return local.toISOString().slice(0, 10);
     }
     return "All sessions";
   }
@@ -408,7 +410,7 @@
       ([name, items]) => {
         const section = make("section", undefined, "agenda-group");
         section.dataset.group = name;
-        section.append(make("h3", view === "day" ? dayLabel(name) : name));
+        section.append(make("h3", view === "day" ? dayLabel(name) : view === "week" ? weekLabel(name) : name));
         const list = make("ul", undefined, "agenda-group-list");
         if (!items.length) list.append(make("li", "No sessions scheduled for this day.", "empty"));
         items.sort((a, b) => a.start_at_ms - b.start_at_ms).forEach((item) =>
@@ -792,6 +794,11 @@
     panel.hidden = conflicts.length === 0;
     if (conflicts.length) panel.focus();
   }
+  window.SessionBuddyPage?.onLeave(() => {
+    // A pending preview must not run against a replaced body.
+    clearTimeout(state.previewTimer);
+    state.previewToken += 1;
+  });
   function schedulePreview() {
     clearTimeout(state.previewTimer);
     const token = ++state.previewToken;
@@ -885,7 +892,7 @@
       showConflicts([]);
       status(`${label[0].toUpperCase()}${label.slice(1)} ${nextStatus === "archived" ? "archived" : "restored"}.`);
     } catch (error) {
-      status(error.message || `The ${label} could not be ${nextStatus === "archived" ? "archived" : "restored"}.`, true);
+      status(window.SessionBuddyApi.message(error, `The ${label} could not be ${nextStatus === "archived" ? "archived" : "restored"}.`), true);
     }
   }
   function openLabelEditor(label) {
@@ -915,7 +922,7 @@
       await load(false);
       status(nextStatus === "archived" ? "Label archived." : label.status === "archived" ? "Label restored." : "Label saved.");
     } catch (error) {
-      status(error.message || "The label could not be saved.", true);
+      status(window.SessionBuddyApi.message(error, "The label could not be saved."), true);
     }
   }
   ["room", "track"].forEach((kind) => {
@@ -942,7 +949,7 @@
         showConflicts([]);
         status(`${kind === "room" ? "Room" : "Track"} added.`);
       } catch (error) {
-        status(error.message || `The ${kind} could not be added.`, true);
+        status(window.SessionBuddyApi.message(error, `The ${kind} could not be added.`), true);
       } finally {
         button.disabled = false;
       }
@@ -965,7 +972,7 @@
       await load(false);
       status("Label added.");
     } catch (error) {
-      status(error.message || "The label could not be added.", true);
+      status(window.SessionBuddyApi.message(error, "The label could not be added."), true);
     } finally {
       button.disabled = false;
     }
@@ -1035,7 +1042,7 @@
           : `${scheduled} sessions placed. Review the draft before publishing.`,
       );
     } catch (error) {
-      status(error.message || "The draft schedule could not be built.", true);
+      status(window.SessionBuddyApi.message(error, "The draft schedule could not be built."), true);
     } finally {
       button.disabled = state.model?.unscheduled_sessions.length === 0;
     }
@@ -1075,7 +1082,7 @@
       render();
       status("Session created and added to the unscheduled list.");
     } catch (error) {
-      status(error.message || "The session could not be created.", true);
+      status(window.SessionBuddyApi.message(error, "The session could not be created."), true);
     } finally {
       button.disabled = false;
     }
@@ -1115,7 +1122,7 @@
       status(
         error.status === 409
           ? "This agenda was already created. Refresh to continue."
-          : error.message,
+          : window.SessionBuddyApi.message(error, "The agenda could not be created."),
         true,
       );
     } finally {
@@ -1274,11 +1281,15 @@
       await saveContent(state.selected);
       await saveLabels(state.selected);
       optimistic(candidate);
-      byId("editor").close();
       render();
+      // Close only once the write lands: a failed save keeps the editor and the
+      // organizer's typed values on screen for a retry.
       await save(candidate);
+      byId("editor").close();
       status("Session scheduled successfully.");
     } catch (error) {
+      // A conflict means the item the editor holds is gone or superseded.
+      if (error.status === 409) byId("editor").close();
       try { await load(false); } catch (_) { state.model = before; render(); }
       status(
         error.status === 409
@@ -1333,10 +1344,14 @@
       return;
     }
     try {
-      const session = await api("/api/v1/auth/session");
+      const sessionPromise = api("/api/v1/auth/session");
+      // The agenda read starts alongside the session check.
+      const loading = load();
+      loading.catch(() => {});
+      const session = await sessionPromise;
       state.csrf = session.csrf_token;
       try {
-        await load();
+        await loading;
       } catch (error) {
         if (error.status === 404) showSetup();
         else throw error;

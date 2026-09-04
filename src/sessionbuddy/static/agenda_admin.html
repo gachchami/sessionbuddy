@@ -5,20 +5,20 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Agenda editor · SessionBuddy</title>
-    <link rel="stylesheet" href="/product/assets/product.css?v=91" type="text/css">
-    <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=7" type="text/css">
-    <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=28" type="text/css">
-    <script src="/app-shell/assets/api-client.js?v=10" defer type="text/javascript">
+    <link rel="stylesheet" href="/product/assets/product.css?v=112" type="text/css">
+    <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=8" type="text/css">
+    <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=38" type="text/css">
+    <script src="/app-shell/assets/api-client.js?v=12" defer type="text/javascript">
 </script>
-  <script src="/app-shell/assets/app-shell.js?v=38" defer type="text/javascript">
+  <script src="/app-shell/assets/app-shell.js?v=45" defer type="text/javascript">
 </script>
-    <script src="/admin/agenda/assets/agenda.js?v=ad342b4873c3" defer type="text/javascript">
+    <script src="/admin/agenda/assets/agenda.js?v=be23d5e8bceb" defer type="text/javascript">
 </script>
   </head>
   <body class="app-body workflow-page workflow-page--agenda">
     <a class="skip-link" href="#main">Skip to content</a>
     <header data-auth-shell></header>
-    <main id="main" class="shell workflow-shell" tabindex="-1">
+    <main id="main" data-sb-swappable class="shell workflow-shell" tabindex="-1">
       <section class="agenda-hero workflow-hero">
         <div>
           <h1 id="event-title">
@@ -110,7 +110,7 @@
               <p class="help">Labels belong to this event and help attendees scan the program.</p>
               <form id="label-form" class="label-create-form">
                 <label><span>Label name</span><input name="name" maxlength="80" placeholder="Beginner" required></label>
-                <label><span>Color</span><input name="color" type="color" value="#2563EB" required></label>
+                <label><span>Color</span><input name="color" type="color" value="#0969DA" required></label>
                 <button type="submit">Add label</button>
               </form>
               <ul id="label-list" class="resource-list"></ul>

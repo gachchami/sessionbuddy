@@ -48,7 +48,7 @@
   margin: 0 0 .55rem;
   color: #59667c;
   font-size: .75rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
@@ -94,10 +94,10 @@
   white-space: nowrap;
 }
 .segmented input:checked + span {
-  border-color: #3159d9;
+  border-color: #0757b8;
   background: #e9eeff;
   color: #274aa9;
-  font-weight: 700;
+  font-weight: 600;
 }
 .segmented input:focus-visible + span {
   outline: 3px solid #e69b00;
@@ -117,7 +117,7 @@
   display: flex;
   align-items: center;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 600;
 }
 .tool-grid {
   display: grid;
@@ -177,7 +177,7 @@
 .content-history-entry__abstract {
   max-width: 62ch;
   margin: .2rem 0 0;
-  color: #475467;
+  color: #59636e;
   white-space: pre-line;
 }
 .label-create-form {
@@ -222,7 +222,7 @@
   background: color-mix(in srgb,var(--label-color) 12%,white);
   color: #27354d;
   font-size: .75rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 .label-fieldset {
   margin: 1rem 0;
@@ -248,7 +248,7 @@
   cursor: pointer;
 }
 .label-choice:has(input:checked) {
-  border-color: #3159d9;
+  border-color: #0757b8;
   background: #edf2ff;
 }
 .panel {
@@ -292,7 +292,7 @@
   border-radius: 999px;
   background: #e9eeff;
   color: #274aa9;
-  font-weight: 700;
+  font-weight: 600;
 }
 .session-list {
   display: grid;
@@ -416,7 +416,7 @@ dialog form {
 }
 .preview-state {
   padding: .7rem;
-  border-left: .25rem solid #3159d9;
+  border-left: .25rem solid #0757b8;
   background: #edf2ff;
 }
 .preview-state.ok {
@@ -434,7 +434,7 @@ dialog form {
   outline: 3px solid #b42318;
   outline-offset: 3px;
 }
-@media (max-width:64rem) {
+@media (max-width: 64rem) {
   .tool-grid {
     grid-template-columns: 1fr 1fr;
   }
@@ -446,7 +446,7 @@ dialog form {
     padding-left: 0;
   }
 }
-@media (max-width:48rem) {
+@media (max-width: 48rem) {
   .agenda-hero {
     align-items: flex-start;
     flex-direction: column;

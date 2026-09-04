@@ -16,7 +16,7 @@ def test_source_wiring_agenda_mobile_toolbar_keeps_publish_as_the_primary_full_w
     None
 ):
     styles = (STATIC / "agenda.css").read_text()
-    mobile = styles.split("@media (max-width:48rem)", 1)[1]
+    mobile = styles.split("@media (max-width: 48rem)", 1)[1]
 
     assert ".agenda-toolbar__actions" in mobile
     assert "grid-template-columns: 1fr 1fr" in mobile
