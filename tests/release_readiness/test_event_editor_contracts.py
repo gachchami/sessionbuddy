@@ -78,3 +78,20 @@ def test_event_editor_uploads_are_dirty_until_the_event_is_saved() -> None:
     assert "Upload complete · Save changes to use this image." in script
     assert "Not saved — you no longer have access to save this event" in script
     assert "state.unsavedUploads.add(kind)" in script
+
+
+def test_event_editor_time_zone_select_stays_flat_with_region_ordered_options() -> None:
+    page = source("event_editor.html")
+    script = source("event_editor.js")
+
+    assert "<optgroup" not in page
+    assert "optgroup" not in script
+    assert '<select name="time_zone" id="event-time-zone" required' in page
+    assert (
+        'const REGION_ORDER = ["UTC", "Africa", "America", "Antarctica", "Arctic", "Asia"'
+        in script
+    )
+    assert "REGION_ORDER.indexOf(a.region) - REGION_ORDER.indexOf(b.region)" in script
+    assert "function renderZoneOptions" in script
+    assert "function offsetMatches" in script
+    assert "function updateTimeZoneContext" in script
