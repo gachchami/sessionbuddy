@@ -4,18 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>People · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=91">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=28">
-  <script src="/app-shell/assets/api-client.js?v=10" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=38" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=112">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=38">
+  <script src="/app-shell/assets/api-client.js?v=12" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=45" defer></script>
   <script src="/admin/people/assets/search.js?v=1" defer></script>
   <script src="/public/assets/biography-disclosure.js?v=b4a25d2ddfb3" defer></script>
-  <script src="/admin/people/assets/people.js?v=b38c27000c0d" defer></script>
+  <script src="/admin/people/assets/people.js?v=4caa679c7af4" defer></script>
 </head>
 <body class="app-body speaker-directory-page speaker-workspace-page">
   <a class="skip-link" href="#main">Skip to people</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell page speaker-directory-shell speaker-workspace-shell" tabindex="-1">
+  <main id="main" data-sb-swappable class="shell page speaker-directory-shell speaker-workspace-shell" tabindex="-1">
     <div class="page-heading directory-hero directory-hero--minimal speaker-workspace-hero">
       <div>
         <h1 id="page-title">People</h1>
@@ -27,7 +27,7 @@
       </div>
     </div>
     <div data-speaker-hub-tabs></div>
-    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
+    <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1">Loading…</div>
     <section id="speaker-detail" class="speaker-profile-editor" hidden aria-labelledby="speaker-name">
       <header class="speaker-detail-heading">
         <div><p id="speaker-event" class="eyebrow"></p><h2 id="speaker-name"></h2><p id="speaker-proposal" class="lede"></p></div>
@@ -71,7 +71,7 @@
       </form>
       <div class="people-table-frame" role="table" aria-label="People">
         <div class="people-table-header" role="row"><span role="columnheader">Person</span><span role="columnheader">Email</span><span role="columnheader">Organization</span><span role="columnheader">Roles</span><span role="columnheader">Events</span></div>
-        <div id="speaker-list" class="people-table-body" role="rowgroup"><div class="empty" role="row"><span role="cell">Loading people…</span></div></div>
+        <div id="speaker-list" class="people-table-body" role="rowgroup"><div class="people-table-row people-table-row--skeleton" aria-hidden="true"><span class="sb-skeleton sb-skeleton--avatar"></span><span><span class="sb-skeleton sb-skeleton--title"></span><span class="sb-skeleton sb-skeleton--text"></span></span></div><div class="people-table-row people-table-row--skeleton" aria-hidden="true"><span class="sb-skeleton sb-skeleton--avatar"></span><span><span class="sb-skeleton sb-skeleton--title"></span><span class="sb-skeleton sb-skeleton--text"></span></span></div><div class="people-table-row people-table-row--skeleton" aria-hidden="true"><span class="sb-skeleton sb-skeleton--avatar"></span><span><span class="sb-skeleton sb-skeleton--title"></span><span class="sb-skeleton sb-skeleton--text"></span></span></div></div>
       </div>
     </section>
     <dialog id="invite-speaker-dialog" class="form-dialog organizer-dialog" aria-labelledby="invite-speaker-title">

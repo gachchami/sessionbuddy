@@ -567,7 +567,13 @@
   let sessionHasOrganizerAccess = false;
 
   async function initialize() {
-    const session = await api("/api/v1/auth/session");
+    const sessionPromise = api("/api/v1/auth/session");
+    // Directory data starts alongside the session check instead of after it.
+    const organizationsPromise = profileScoped
+      ? null
+      : api("/api/v1/admin/organizations").then((response) => response.data);
+    organizationsPromise?.catch(() => {});
+    const session = await sessionPromise;
     csrf = session.csrf_token;
     const canUseOrganizerResource = (item) => (item.permissions || []).some((permission) =>
       ["owner", "edit", "manage"].includes(permission));
@@ -578,7 +584,6 @@
       showProfile(profile);
       return;
     }
-    const organizationsPromise = api("/api/v1/admin/organizations").then((response) => response.data);
     let activeEvent = null;
     if (eventScoped) {
       activeEvent = await loadEventScopedDirectory(organizationsPromise);
@@ -611,7 +616,7 @@
       const selection = findEventSpeaker(selectedSpeakerId);
       // The singular endpoint is authoritative. A miss is handled as a
       // document-scope failure above rather than inferred from a capped roster.
-      if (!selection) throw new Error("The speaker record could not be loaded.");
+      if (!selection) throw window.SessionBuddyApi.userError("The speaker record could not be loaded.");
       showSpeakerDetail(selection.person, selection.participation);
     }
     byId("status").classList.remove("error");
@@ -651,6 +656,7 @@
       invitationCreated = true;
       form.reset();
       inviteDialog.close();
+      byId("status").classList.remove("error");
       byId("status").textContent = "Speaker invitation created. Refreshing the roster…";
       await refreshEventScopedRoster();
       byId("status").textContent = "Speaker invitation created and emailed. The roster is up to date.";
@@ -933,6 +939,10 @@
       linkControl.setCustomValidity("");
       return;
     }
+    const saveButton = form.querySelector('button[type="submit"], button:not([type])');
+    // A second click while the PATCH is in flight would race the same version
+    // and surface a false "changed elsewhere" conflict.
+    if (saveButton) saveButton.disabled = true;
     try {
       const profileEndpoint = profileScoped
         ? `/api/v1/speaker-profiles/${encodeURIComponent(selectedSpeaker.person_id)}`
@@ -972,12 +982,15 @@
           renderDirectory();
         }
       }
+      byId("status").classList.remove("error");
       byId("status").textContent = "Speaker details saved.";
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").classList.add("error");
       const validationShown = window.SessionBuddyApi.showValidationErrors?.(form, error) ?? false;
       if (!validationShown) byId("status").focus();
+    } finally {
+      if (saveButton) saveButton.disabled = false;
     }
   });
 
@@ -1037,6 +1050,8 @@
       label: row.querySelector("[data-note-label]").value,
       value: row.querySelector("[data-note-value]").value,
     }));
+    const notesButton = form.querySelector('button[type="submit"], button:not([type])');
+    if (notesButton) notesButton.disabled = true;
     try {
       const result = await api(`/api/v1/admin/events/${encodeURIComponent(selectedSpeaker.event.id)}/speakers/${encodeURIComponent(selectedSpeaker.event_speaker_id)}/organizer-notes`, {
         method: "PUT",
@@ -1044,10 +1059,14 @@
         body: JSON.stringify({ data, version: Number(form.elements.version.value) }),
       });
       form.elements.version.value = result.version;
+      byId("status").classList.remove("error");
       byId("status").textContent = "Organizer notes saved.";
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").classList.add("error");
+      byId("status").focus();
+    } finally {
+      if (notesButton) notesButton.disabled = false;
     }
   });
 
@@ -1080,6 +1099,15 @@
     if (!window.SessionBuddyApi.redirectIfSignedOut(error)) {
       byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").classList.add("error");
+      // Skeleton rows are a promise of content; a failed load must not keep it.
+      const unavailable = document.createElement("div");
+      unavailable.className = "empty";
+      unavailable.setAttribute("role", "row");
+      const cell = document.createElement("span");
+      cell.setAttribute("role", "cell");
+      cell.textContent = "People could not be loaded.";
+      unavailable.append(cell);
+      byId("speaker-list")?.replaceChildren(unavailable);
     }
   });
 })();

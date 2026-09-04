@@ -418,11 +418,19 @@
       form.querySelector(":invalid")?.focus();
       return;
     }
+    const button = form.querySelector('button[type="submit"], button:not([type])');
+    // One key per attempt: a retry after a failure replays the same request
+    // instead of publishing a second copy of the resource.
+    form.dataset.requestKey ||= idempotencyKey();
+    button.disabled = true;
     try {
-      await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/resources`, { method: "POST", headers: mutationHeaders(), body: JSON.stringify({ title: values.title, slug: values.slug, summary: values.summary, body_text: values.body_text, embed_url: values.embed_url || null, status: values.status, sort_order: Number(values.sort_order) }) });
+      await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/resources`, { method: "POST", headers: { ...mutationHeaders(), "idempotency-key": form.dataset.requestKey }, body: JSON.stringify({ title: values.title, slug: values.slug, summary: values.summary, body_text: values.body_text, embed_url: values.embed_url || null, status: values.status, sort_order: Number(values.sort_order) }) });
+      delete form.dataset.requestKey;
       form.reset(); delete form.elements.slug.dataset.edited; form.elements.sort_order.value = "0"; setStatus("Resource published to the speaker portal."); await loadResources();
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
+    finally { button.disabled = false; }
   });
+  byId("resource-form").addEventListener("input", () => { delete byId("resource-form").dataset.requestKey; });
   byId("task-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     // event.currentTarget is null after any await; capture the form up front.
@@ -498,9 +506,12 @@
   byId("task-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
   byId("task-type").addEventListener("change", updateTaskType);
   async function initialize() {
-    if (!eventId) throw new Error("Invalid event link.");
-    const session = await api("/api/v1/auth/session"); state.csrf = session.csrf_token;
-    const timeZone = await loadEventTimeZone();
+    if (!eventId) throw window.SessionBuddyApi.userError("This event link is invalid.");
+    const sessionPromise = api("/api/v1/auth/session");
+    const timeZonePromise = loadEventTimeZone();
+    timeZonePromise.catch(() => {});
+    const session = await sessionPromise; state.csrf = session.csrf_token;
+    const timeZone = await timeZonePromise;
     if (!timeZone) return;
     state.timeZone = timeZone;
     byId("task-time-zone").textContent = state.timeZone;
