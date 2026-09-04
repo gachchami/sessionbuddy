@@ -153,7 +153,7 @@
   }
 
   function renderEventHeader(form) {
-    const accent = form.accent_color || "#3159d9";
+    const accent = form.accent_color || "#0969da";
     document.documentElement.style.setProperty("--event-accent", accent);
     const header = byId("event-public-header");
     header.style.setProperty("--event-preview-accent", accent);

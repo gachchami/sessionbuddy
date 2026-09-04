@@ -24,7 +24,7 @@
   // reads this instead.
   const identityFieldKeys = ["speaker_name", "speaker_email"];
   const proposalFieldKeys = new Set(["proposal_title", "proposal_abstract", ...standardProposalFields.map((field) => field.key)]);
-  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventLocation: "", eventDeliveryMode: "", eventAccentColor: "#3159d9", eventLogoUrl: "", eventCoverUrl: "", eventTracks: [], publishedForm: null, serverDraft: null, availabilityTimer: null, editing: false, dirty: false, draftTimer: null, previewFrame: null, previewOpen: false, fieldOrderOpen: false, fieldUndo: null, fieldFeedbackTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
+  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventLocation: "", eventDeliveryMode: "", eventAccentColor: "#0969da", eventLogoUrl: "", eventCoverUrl: "", eventTracks: [], publishedForm: null, serverDraft: null, availabilityTimer: null, editing: false, dirty: false, draftTimer: null, previewFrame: null, previewOpen: false, fieldOrderOpen: false, fieldUndo: null, fieldFeedbackTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -1306,19 +1306,26 @@
     state.draftTimer = setTimeout(saveLocalDraft, 500);
   }
 
+  function forgetLocalDraft() {
+    // Storage access can throw when site data is blocked. Publishing must not
+    // fail after the server write just because the browser copy cannot clear.
+    try { sessionStorage.removeItem(draftKey()); } catch (_) { /* nothing to forget */ }
+  }
+
   function discardLocalDraft() {
     clearTimeout(state.draftTimer);
     state.draftTimer = null;
-    sessionStorage.removeItem(draftKey());
+    forgetLocalDraft();
   }
 
   function restoreLocalDraft() {
-    const raw = sessionStorage.getItem(draftKey());
+    let raw = null;
+    try { raw = sessionStorage.getItem(draftKey()); } catch (_) { return false; }
     if (!raw) return false;
     try {
       const draft = JSON.parse(raw);
       if (state.publishedForm && draft.form_version !== state.publishedForm.version) {
-        sessionStorage.removeItem(draftKey());
+        forgetLocalDraft();
         return false;
       }
       if (
@@ -1326,7 +1333,7 @@
         && (draft.server_draft_version !== state.serverDraft.version
           || Number(draft.saved_at_ms || 0) <= state.serverDraft.updated_at_ms)
       ) {
-        sessionStorage.removeItem(draftKey());
+        forgetLocalDraft();
         return false;
       }
       const form = byId("publish-form");
@@ -1359,7 +1366,7 @@
         : "Draft restored from this browser";
       return true;
     } catch (_) {
-      sessionStorage.removeItem(draftKey());
+      forgetLocalDraft();
       return false;
     }
   }
@@ -1630,16 +1637,26 @@
 
   async function restoreSession() {
     try {
-      const session = await api("/api/v1/auth/session");
+      const sessionPromise = api("/api/v1/auth/session");
+      // A routed event id is known before the session answers, so its CFP and
+      // event reads can start now; the session-derived id is honored if it differs.
+      const routedEventId = eventIdFromPage({});
+      const earlyWorkspace = routedEventId ? loadWorkspace(routedEventId) : null;
+      const earlyEvent = routedEventId ? api(`/api/v1/admin/events/${encodeURIComponent(routedEventId)}`) : null;
+      earlyWorkspace?.catch(() => {});
+      earlyEvent?.catch(() => {});
+      const session = await sessionPromise;
       state.userId = session.user_id;
       const eventId = eventIdFromPage(session);
       if (!eventId) throw new Error("Choose an event before opening its Call for Proposals.");
       state.csrf = session.csrf_token;
-      const workspace = await loadWorkspace(eventId);
+      const workspace = await (earlyWorkspace && eventId === routedEventId ? earlyWorkspace : loadWorkspace(eventId));
       state.context = { organization_id: workspace.organization_id, event_id: workspace.event_id };
       state.eventName = workspace.event_name;
       state.eventStartsAtMs = workspace.event_starts_at_ms;
-      const currentEvent = await api(`/api/v1/admin/events/${encodeURIComponent(workspace.event_id)}`);
+      const currentEvent = await (earlyEvent && workspace.event_id === routedEventId
+        ? earlyEvent
+        : api(`/api/v1/admin/events/${encodeURIComponent(workspace.event_id)}`));
       if (!currentEvent?.time_zone) throw new Error("The event time zone could not be loaded.");
       state.eventStatus = currentEvent.status;
       state.eventTimeZone = currentEvent.time_zone;
@@ -1648,7 +1665,7 @@
         ? currentEvent.draft_delivery_mode
         : currentEvent.delivery_mode;
       state.eventDeliveryMode = String(logicalDeliveryMode || "").replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
-      state.eventAccentColor = currentEvent.accent_color || "#3159d9";
+      state.eventAccentColor = currentEvent.accent_color || "#0969da";
       state.eventLogoUrl = currentEvent.logo_url || "";
       state.eventCoverUrl = currentEvent.cover_image_url || "";
       byId("cfp-time-zone").textContent = state.eventTimeZone;
@@ -2084,11 +2101,31 @@
     if (!state.previewOpen) selectOutline(state.selectedOutline, false);
     byId("preview-cfp").focus();
   });
+  const hasUnsavedLiveChanges = () => Boolean(state.publishedForm && state.dirty);
+  // Leaving in place: nothing owned by this page may outlive its body. A
+  // queued browser backup runs now, while the form still exists, so a draft
+  // typed within the debounce window is kept rather than lost.
+  window.SessionBuddyPage?.onLeave(() => {
+    if (state.draftTimer) {
+      clearTimeout(state.draftTimer);
+      state.draftTimer = null;
+      saveLocalDraft();
+    }
+    window.clearTimeout(state.availabilityTimer);
+    window.clearTimeout(state.fieldFeedbackTimer);
+    clearTimeout(copyFeedbackTimer);
+    cancelAnimationFrame(state.previewFrame);
+  });
   window.addEventListener("beforeunload", (event) => {
-    if (!state.publishedForm || !state.dirty) return;
+    if (!hasUnsavedLiveChanges()) return;
     event.preventDefault();
     event.returnValue = "";
-  });
+  }, { signal: window.SessionBuddyPage?.signal });
+  // Unsaved live changes turn an in-place workspace navigation into a
+  // document one so the native leave prompt above applies.
+  window.addEventListener("sessionbuddy:navigate", (event) => {
+    if (hasUnsavedLiveChanges()) event.preventDefault();
+  }, { signal: window.SessionBuddyPage?.signal });
 
   byId("edit-cfp").addEventListener("click", () => byId("cfp-share-dialog").close());
   function setLiveUrlEditing(editing) {
