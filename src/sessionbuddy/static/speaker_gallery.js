@@ -122,7 +122,7 @@
     if (!eventId) throw new Error("Invalid speaker gallery link.");
     const body = await window.SessionBuddyApi.request(`/api/v1/public/events/${encodeURIComponent(eventId)}/speakers${location.search}`);
     state.event = body.event;
-    document.documentElement.style.setProperty("--event-accent", body.event.accent_color || "#3159d9");
+    document.documentElement.style.setProperty("--event-accent", body.event.accent_color || "#0969da");
     const query = new URLSearchParams(location.search).get("q") || "";
     const querySuffix = query ? `?q=${encodeURIComponent(query)}` : "";
     byId("speaker-list-link").href = `/events/${encodeURIComponent(eventId)}/speakers${querySuffix}`;
