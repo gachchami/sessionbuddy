@@ -86,7 +86,8 @@
     const params = new URLSearchParams();
     if (filters.state !== "all") params.set("state", filters.state);
     if (filters.task_type) params.set("task_type", filters.task_type);
-    history.replaceState(null, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+    // Keep the shell's history stamp on this entry so Back/Forward stays precise.
+    history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
   }
 
   function showFilterRefreshPending(pending) {
@@ -96,8 +97,8 @@
     byId("filter-refresh-status").hidden = !pending;
   }
 
-  function formatDate(value) {
-    if (value === null || value === undefined) return "No due date";
+  function formatDate(value, missing = "No due date") {
+    if (value === null || value === undefined) return missing;
     try {
       return new Intl.DateTimeFormat(undefined, {
         dateStyle: "medium", timeStyle: "short", timeZone: state.timeZone
@@ -115,7 +116,7 @@
     const speaker = document.createElement("td");
     const link = make("a", row.display_name); link.href = speakerLink(row); speaker.append(link);
     tr.append(speaker);
-    [taskProposalTitle(row), row.task_title, formatDate(row.due_at_ms), formatDate(row.last_activity_at_ms)].forEach((value, index) => {
+    [taskProposalTitle(row), row.task_title, formatDate(row.due_at_ms), formatDate(row.last_activity_at_ms, "No activity yet")].forEach((value, index) => {
       const td = make("td", value, index === 1 ? "task-name" : index === 2 && isOverdue(row) ? "overdue" : ""); tr.append(td);
     });
     const action = document.createElement("td");
@@ -135,7 +136,7 @@
     const heading = document.createElement("h3");
     const speaker = make("a", row.display_name); speaker.href = speakerLink(row); heading.append(speaker); item.append(heading);
     const list = document.createElement("dl");
-    [["Session", taskProposalTitle(row)], ["Missing", row.task_title], ["Due", formatDate(row.due_at_ms)], ["Last activity", formatDate(row.last_activity_at_ms)]].forEach(([label, value]) => {
+    [["Session", taskProposalTitle(row)], ["Missing", row.task_title], ["Due", formatDate(row.due_at_ms)], ["Last activity", formatDate(row.last_activity_at_ms, "No activity yet")]].forEach(([label, value]) => {
       list.append(make("dt", label), make("dd", value, label === "Due" && isOverdue(row) ? "overdue" : ""));
     });
     item.append(list);
@@ -212,6 +213,7 @@
     byId("count-awaiting-acceptance").textContent = summary.awaiting_acceptance;
     const incoming = data.data;
     byId("list-title").textContent = filters.state === "open" ? "Outstanding tasks" : "Speaker tasks";
+    state.pagesLoaded = append ? (state.pagesLoaded || 1) + 1 : 1;
     if (!append) {
       state.rows = [];
       byId("onboarding-rows").replaceChildren();
@@ -226,12 +228,16 @@
     state.cursor = data.next_cursor || null;
   }
 
-  async function refresh({ append = false, announce = false, commitFilters = false, requestedFilters = null } = {}) {
+  async function refresh({ append = false, announce = false, commitFilters = false, requestedFilters = null, background = false } = {}) {
     const filters = requestedFilters || (commitFilters ? selectedFilters() : state.committedFilters);
     if (state.terminal || document.hidden) {
       if (commitFilters) showFilterRefreshPending(false);
       return;
     }
+    // A background poll re-requests page one and rebuilds the list. Skip it
+    // while the organizer has paged deeper or is working inside the results,
+    // so it cannot discard loaded rows or steal keyboard focus.
+    if (background && ((state.pagesLoaded || 1) > 1 || byId("results-panel").contains(document.activeElement))) return;
     if (state.loading) {
       if (announce || commitFilters) {
         state.queuedRefresh = {
@@ -302,14 +308,14 @@
 
   function startPolling() {
     clearInterval(state.timer);
-    if (!state.terminal && !document.hidden) state.timer = setInterval(() => refresh(), REFRESH_MS);
+    if (!state.terminal && !document.hidden) state.timer = setInterval(() => refresh({ background: true }), REFRESH_MS);
   }
 
   function connectInvalidations() {
     if (!("BroadcastChannel" in window)) return;
     state.channel?.close();
     state.channel = new BroadcastChannel(`sessionbuddy:onboarding:${eventId}`);
-    state.channel.addEventListener("message", () => refresh());
+    state.channel.addEventListener("message", () => refresh({ background: true }));
   }
 
   function initializeFilters() {
@@ -326,15 +332,24 @@
   byId("clear-filters").addEventListener("click", () => { byId("filters").reset(); refresh({ announce: true, commitFilters: true }); });
   byId("refresh").addEventListener("click", () => refresh({ announce: true }));
   byId("load-more").addEventListener("click", () => refresh({ append: true, announce: true }));
+  // Global listeners, the poll timer, and the invalidation channel belong to
+  // this page body: the shell aborts the page signal when it swaps the body
+  // for another workspace section, so none of them can outlive the page.
+  const pageSignal = window.SessionBuddyPage?.signal;
   document.addEventListener("visibilitychange", () => {
     startPolling();
     if (document.hidden) setConnection("", "Updates paused");
     else refresh({ announce: true });
+  }, { signal: pageSignal });
+  window.addEventListener("online", () => refresh({ announce: true }), { signal: pageSignal });
+  window.addEventListener("offline", () => setConnection("stale", "Offline · snapshot retained"), { signal: pageSignal });
+  window.addEventListener("pageshow", (event) => { if (event.persisted) refresh({ announce: true }); }, { signal: pageSignal });
+  window.addEventListener("sessionbuddy:onboarding-invalidated", () => refresh(), { signal: pageSignal });
+  window.SessionBuddyPage?.onLeave(() => {
+    state.terminal = true;
+    clearInterval(state.timer);
+    state.channel?.close();
   });
-  window.addEventListener("online", () => refresh({ announce: true }));
-  window.addEventListener("offline", () => setConnection("stale", "Offline · snapshot retained"));
-  window.addEventListener("pageshow", (event) => { if (event.persisted) refresh({ announce: true }); });
-  window.addEventListener("sessionbuddy:onboarding-invalidated", () => refresh());
 
   async function initialize() {
     if (!eventId) {

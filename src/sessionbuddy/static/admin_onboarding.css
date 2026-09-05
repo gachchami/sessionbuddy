@@ -12,7 +12,7 @@ h1, h2 { margin: .15rem 0 .5rem; line-height: 1.15; }
 .status.error { border-color: var(--status-danger-border); background: var(--status-danger-surface); color: var(--status-danger-text); }
 .summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .75rem; }
 .summary-grid article, .panel { border: 1px solid var(--line); border-radius: 1rem; background: white; box-shadow: none; }
-.summary-grid article { min-height: 5.75rem; display: grid; align-content: space-between; gap: .35rem; padding: 1rem 1.25rem; background: #edf2f7; }
+.summary-grid article { min-height: 5.75rem; display: grid; align-content: space-between; gap: .35rem; padding: 1rem 1.25rem; background: #f2f4f7; }
 .summary-grid article:nth-child(2n) { background: #eef5ec; }
 .summary-grid span { color: #5c687d; font-size: .875rem; font-weight: 600; line-height: 1.35; }
 .summary-grid strong { font-size: 1.375rem; line-height: 1; font-variant-numeric: tabular-nums; }
@@ -21,13 +21,13 @@ h1, h2 { margin: .15rem 0 .5rem; line-height: 1.15; }
 .filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; gap: 1rem; align-items: end; }
 .filter-actions { display: flex; align-items: center; gap: .5rem; }
 .filter-actions :where(button) { min-height: 2.75rem; white-space: nowrap; }
-.count { min-width: 2rem; padding: .2rem .6rem; border-radius: 999px; background: var(--status-info-surface); color: var(--status-info-text); text-align: center; font-weight: 700; }
+.count { min-width: 2rem; padding: .2rem .6rem; border-radius: 999px; background: var(--status-info-surface); color: var(--status-info-text); text-align: center; font-weight: 600; }
 .desktop-table { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: .8rem; border-bottom: 1px solid #dce1eb; text-align: left; vertical-align: top; }
-th { color: #536079; font-size: .75rem; font-weight: 700; letter-spacing: .035em; text-transform: uppercase; }
-.task-name { font-weight: 700; }
-.overdue { color: #9b241a; font-weight: 700; }
+th { color: #536079; font-size: .75rem; font-weight: 600; letter-spacing: .035em; text-transform: uppercase; }
+.task-name { font-weight: 600; }
+.overdue { color: #9b241a; font-weight: 600; }
 .mobile-cards { display: none; margin: 0; padding: 0; list-style: none; }
 .mobile-cards li { padding: 1rem 0; border-bottom: 1px solid #dce1eb; }
 .mobile-cards h3 { margin: 0; }
@@ -75,7 +75,7 @@ th { color: #536079; font-size: .75rem; font-weight: 700; letter-spacing: .035em
 .onboarding-filter-refresh {
   margin: 0 0 1rem;
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .organizer-panel--results.is-filtering .desktop-table,
