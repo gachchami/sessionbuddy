@@ -192,15 +192,23 @@
       : "";
   }
 
+  let searchSequence = 0;
   byId("reviewer-search-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const email = form.elements.email.value.trim();
     const result = byId("reviewer-search-result");
+    const searchButton = form.querySelector('button[type="submit"], button:not([type])');
+    // The answer on screen must belong to the address typed last, never to a
+    // slower earlier lookup that resolves afterwards.
+    const sequence = ++searchSequence;
+    const stale = () => sequence !== searchSequence;
     result.textContent = "Searching…";
+    if (searchButton) searchButton.disabled = true;
     try {
       const reviewers = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluators?email=${encodeURIComponent(email)}`);
+      if (stale()) return;
       if (reviewers.data.length) {
         result.textContent = `${reviewers.data[0].display_name} is eligible for this event and can be assigned to a round.`;
         return;
@@ -220,6 +228,7 @@
           invitation = invitations.data.find((item) => item.role === "evaluator"
             && item.email.toLowerCase() === pending.email.toLowerCase()) || null;
         } catch (error) { invitation = null; }
+        if (stale()) return;
       }
       const who = (invitation && invitation.display_name) || pending?.email || email;
       if (pending && pending.expired) {
@@ -281,7 +290,9 @@
       });
       result.append(invite);
     } catch (error) {
-      result.textContent = window.SessionBuddyApi.message(error);
+      if (!stale()) result.textContent = window.SessionBuddyApi.message(error);
+    } finally {
+      if (searchButton && !stale()) searchButton.disabled = false;
     }
   });
   byId("invite-form").addEventListener("submit", async (event) => {
@@ -335,12 +346,25 @@
       byId("status").textContent = "Copy was unavailable. The access link is selected for manual copying.";
     }
   });
+  function showListUnavailable(text) {
+    // The roster must not keep claiming to load once the request has failed.
+    const row = document.createElement("div");
+    row.className = "empty";
+    row.setAttribute("role", "row");
+    const cell = document.createElement("span");
+    cell.setAttribute("role", "cell");
+    cell.textContent = text;
+    row.append(cell);
+    byId("reviewer-list").replaceChildren(row);
+  }
   if (!eventId) {
     byId("status").textContent = "This event link is invalid.";
+    showListUnavailable("Reviewers cannot be shown for an invalid event link.");
     return;
   }
   load().catch((error) => {
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
     byId("status").textContent = window.SessionBuddyApi.message(error);
+    showListUnavailable("Reviewers could not be loaded.");
   });
 })();

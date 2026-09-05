@@ -362,6 +362,9 @@
         })
       });
       if (profile.csrf_token) session.csrf_token = profile.csrf_token;
+      // The profile write is committed here. Adopt its version now so a failed
+      // headshot upload below cannot leave every retry stuck on a stale 409.
+      version = profile.version;
       if (selectedHeadshot) {
         showStatus("Saving your headshot…");
         await api("/api/v1/account/headshot", {
