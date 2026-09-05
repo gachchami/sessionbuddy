@@ -218,6 +218,7 @@
     }
   }
 
+  window.SessionBuddyPage?.onLeave(() => clearTimeout(compatibilityTimer));
   function scheduleCompatibilityCheck() {
     clearTimeout(compatibilityTimer);
     compatibilityTimer = setTimeout(checkCompatibility, 450);
@@ -492,22 +493,28 @@
   byId("message-history-filter").addEventListener("change", renderMessageHistory);
 
   async function initialize() {
-    if (!eventId) throw new Error("Invalid event link.");
-    const session = await api("/api/v1/auth/session"); csrf = session.csrf_token;
+    if (!eventId) throw window.SessionBuddyApi.userError("This event link is invalid.");
+    const sessionPromise = api("/api/v1/auth/session");
+    // Event and recipient reads start alongside the session check.
+    const eventPromise = api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+    const targetsPromise = api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`);
+    eventPromise.catch(() => {});
+    targetsPromise.catch(() => {});
+    const session = await sessionPromise; csrf = session.csrf_token;
     let event;
     try {
-      event = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+      event = await eventPromise;
     } catch (error) {
       const recoveryScope = window.SessionBuddyApi.recoveryScope.event(eventId);
       if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
           || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
       throw error;
     }
-    if (!event?.time_zone) throw new Error("The event time zone could not be loaded.");
+    if (!event?.time_zone) throw window.SessionBuddyApi.userError("The event time zone could not be loaded.");
     eventTimeZone = event.time_zone;
     byId("message-time-zone").textContent = eventTimeZone;
     byId("speaker-directory").href = `/admin/events/${encodeURIComponent(eventId)}/speakers`;
-    speakers = (await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`)).data;
+    speakers = (await targetsPromise).data;
     renderRecipients();
     await loadMessageHistory();
     if (byId("status").textContent === "Loading speakers\u2026") {
@@ -519,6 +526,15 @@
 
   initialize().catch((error) => {
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+    // The recipient placeholder must not keep saying "Loading" once the load
+    // has failed; the status line alone is easy to miss.
+    const list = byId("recipient-list");
+    if (list && !speakers.length) {
+      const failed = document.createElement("p");
+      failed.className = "empty workflow-empty-state";
+      failed.textContent = "Recipients could not be loaded. Reload the page to try again.";
+      list.replaceChildren(failed);
+    }
     setStatus(window.SessionBuddyApi.message(error), true);
   });
 })();
