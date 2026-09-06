@@ -95,9 +95,12 @@
     renderEmbed(); renderRegistry();
     byId("event-id").textContent = eventId; byId("api-base").textContent = `${location.origin}/v1`;
     setStatus("Sharing tools ready. Checking integration access…");
-    const session = await api("/api/v1/auth/session"); state.csrf = session.csrf_token;
+    const sessionPromise = api("/api/v1/auth/session");
+    const eventPromise = api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+    eventPromise.catch(() => {});
+    const session = await sessionPromise; state.csrf = session.csrf_token;
     try {
-      await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+      await eventPromise;
     } catch (error) {
       const scope = window.SessionBuddyApi.recoveryScope.event(eventId);
       if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, scope)

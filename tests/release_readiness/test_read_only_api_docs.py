@@ -31,7 +31,7 @@ def test_api_docs_are_self_contained_and_csp_compatible() -> None:
     assert all(value.startswith("/") or value.startswith("#") for value in urls)
     assert any(url.startswith("/product/assets/product.css?v=") for url in urls)
     assert any(url.startswith("/docs/assets/api-docs.css?v=") for url in urls)
-    assert "/app-shell/assets/api-client.js?v=10" in urls
+    assert "/app-shell/assets/api-client.js?v=12" in urls
     assert "/docs/assets/api-docs.js?v=2" in urls
     assert "swagger" not in markup.lower()
     assert "redoc" not in markup.lower()
@@ -78,8 +78,8 @@ def test_api_docs_styles_cover_mobile_keyboard_and_reduced_motion() -> None:
 
     assert ".docs-page :focus-visible" in stylesheet
     assert "min-height: 2.5rem" in stylesheet
-    assert "@media (max-width: 54rem)" in stylesheet
-    assert "@media (max-width: 36rem)" in stylesheet
+    assert "@media (max-width: 52rem)" in stylesheet
+    assert "@media (max-width: 40rem)" in stylesheet
     assert "@media (prefers-reduced-motion: reduce)" in stylesheet
     assert ".operation-list::before" in stylesheet
     assert '[data-method="delete"]' in stylesheet
