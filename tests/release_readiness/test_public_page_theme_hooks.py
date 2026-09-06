@@ -50,7 +50,7 @@ def test_auth_setup_invitation_and_error_pages_have_specific_surfaces() -> None:
 
 def test_source_wiring_page_specific_stylesheets_own_visual_treatments() -> None:
     styles = {
-        "landing.css": (".marketing-page", ".hero-grid"),
+        "landing.css": (".marketing-page", ".programme"),
         "speaker.css": (".speaker-portal-page", ".portal-hero"),
         "schedule.css": (".schedule-page", ".schedule-hero", ".schedule-controls"),
         "setup.css": (".setup-body", ".setup-card"),

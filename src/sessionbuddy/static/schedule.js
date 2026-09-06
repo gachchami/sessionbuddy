@@ -28,7 +28,11 @@
   function day(item) { return format(item.start_at_ms, { weekday: "long", month: "long", day: "numeric" }); }
   function dayKey(item) { return format(item.start_at_ms, { year: "numeric", month: "2-digit", day: "2-digit" }); }
   function group(item) { if (state.view === "room") return item.room_name; if (state.view === "track") return item.track_name || "No track"; if (["day", "week"].includes(state.view)) return day(item); if (state.view === "mine") return "My itinerary"; return "All sessions"; }
-  function saveItinerary() { localStorage.setItem(storageKey, JSON.stringify([...state.itinerary])); byId("itinerary-count").textContent = String(state.itinerary.size); }
+  function saveItinerary() {
+    // Storage-denied browsers still get a working in-page itinerary.
+    try { localStorage.setItem(storageKey, JSON.stringify([...state.itinerary])); } catch (_) { /* keep the in-memory set */ }
+    byId("itinerary-count").textContent = String(state.itinerary.size);
+  }
   function icsText(items) {
     const escape = (value) => String(value || "").replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll(",", "\\,").replaceAll(";", "\\;");
     const stamp = (value) => new Date(value).toISOString().replaceAll("-", "").replaceAll(":", "").replace(".000", "");
@@ -94,7 +98,14 @@
   function sessionCard(item) {
     const row = make("li", undefined, "schedule-item");
     row.style.setProperty("--track-color", trackColor(item));
-    const time = make("time", `${format(item.start_at_ms, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}–${format(item.end_at_ms, { hour: "numeric", minute: "2-digit" })}`); time.dateTime = new Date(item.start_at_ms).toISOString();
+    // Day and time range are separate lines so the narrow time column never
+    // breaks mid-range.
+    const time = make("time");
+    time.append(
+      make("span", format(item.start_at_ms, { weekday: "short", month: "short", day: "numeric" }), "schedule-item__day"),
+      make("span", `${format(item.start_at_ms, { hour: "numeric", minute: "2-digit" })}–${format(item.end_at_ms, { hour: "numeric", minute: "2-digit" })}`, "schedule-item__range")
+    );
+    time.dateTime = new Date(item.start_at_ms).toISOString();
     const details = document.createElement("div");
     const classification = make("p", undefined, "session-classification");
     classification.append(make("span", item.format_name, "session-format-name"), trackChip(item));
@@ -154,17 +165,26 @@
     root.append(board);
   }
   function render() {
+    // Controls are live from first paint; ignore them until the model exists.
+    if (!state.model) return;
     const source = state.view === "mine" ? state.model.items.filter((item) => state.itinerary.has(item.id)) : state.model.items;
     const visible = source.filter(matches);
     const groups = new Map();
     visible.forEach((item) => { const key = group(item); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item); });
     const root = byId("schedule"); root.replaceChildren(); root.classList.toggle("week-view", state.view === "week");
-    byId("results-summary").textContent = state.query || state.view === "mine"
+    const narrowed = Boolean(state.query || state.track || state.format || state.room || state.day || state.view === "mine");
+    // The status region already announces the published total; the summary
+    // speaks only when a search, filter, or itinerary narrows that list.
+    byId("results-summary").textContent = narrowed
       ? `${visible.length} of ${source.length} session${source.length === 1 ? "" : "s"} shown.`
-      : `${visible.length} published session${visible.length === 1 ? "" : "s"}.`;
+      : "";
     byId("empty").hidden = visible.length !== 0;
     byId("download-calendar").disabled = state.itinerary.size === 0;
-    byId("empty").querySelector("strong").textContent = state.view === "mine" ? "Choose + on a session to build your itinerary." : "No sessions are published yet.";
+    byId("empty").querySelector("strong").textContent = state.view === "mine"
+      ? "Choose + on a session to build your itinerary."
+      : narrowed && source.length
+        ? "No sessions match your search or filters."
+        : "No sessions are published yet.";
     if (state.view === "grid") { renderGrid(visible); return; }
     [...groups].forEach(([name, items]) => {
       const section = make("section", undefined, "schedule-group"); section.append(make("h2", name));
