@@ -48,9 +48,9 @@ async def test_root_serves_public_product_homepage(client: AsyncClient) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert response.headers["cache-control"] == "no-store"
-    assert "From open call to published agenda." in response.text
+    assert "Open source software that manages your events." in response.text
     assert 'href="/sign-in?redirect=%2Fadmin"' in response.text
-    assert "Keep the program moving." in response.text
+    assert "Programs running on SessionBuddy" in response.text
     assert "Collect" in response.text
     assert "Publish" in response.text
     assert 'href="/engine-room"' not in response.text
@@ -85,7 +85,7 @@ async def test_authenticated_root_redirects_to_active_role_dashboard(
     assert response.status_code == 303
     assert response.headers["location"] == destination
     assert response.headers["cache-control"] == "no-store"
-    assert "From open call to published agenda." not in response.text
+    assert "Open source software that manages your events." not in response.text
 
 
 async def test_incomplete_profile_root_redirects_to_account_onboarding(
@@ -152,7 +152,7 @@ async def test_landing_page_style_packaging_includes_shared_accessibility_rules(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/css")
     assert response.headers["cache-control"] == "public, max-age=300"
-    assert ".hero-grid" in response.text
+    assert ".programme" in response.text
     assert '@import url("/product/assets/product.css?v=' in response.text
     shared = await client.get("/product/assets/product.css")
     assert shared.status_code == 200

@@ -1,4 +1,4 @@
-@import url("/product/assets/product.css?v=91");
+@import url("/product/assets/product.css?v=112");
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
 body { margin: 0; line-height: 1.5; }
@@ -6,18 +6,18 @@ header, main { width: calc(100% - 2rem); max-width: 72rem; margin-left: auto; ma
 header { margin-block: 1.25rem; padding: 1.5rem; border: 1px solid var(--line); border-radius: 1rem; background: white; }
 h1 { max-width: 15ch; margin: .15rem 0 .5rem; font-size: 1.5rem; line-height: 1.2; }
 h2 { margin-top: 0; }
-.eyebrow { display: none; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; color: #27624d; }
-.badge { display: inline-block; padding: .3rem .65rem; border-radius: 999px; font-weight: 700; }
+.eyebrow { display: none; text-transform: uppercase; letter-spacing: .12em; font-weight: 600; color: #27624d; }
+.badge { display: inline-block; padding: .3rem .65rem; border-radius: 999px; font-weight: 600; }
 .badge-warning { color: #694400; background: #ffe19a; }
 main { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr); gap: 1.25rem; padding-bottom: 4rem; }
 section, aside, .notice { min-width: 0; padding: 1.25rem; border: 1px solid var(--line); border-radius: 1rem; background: #fff; }
 .notice { grid-column: 1 / -1; }
 .notice.error { border-color: #b63131; color: #7f1d1d; }
 .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-.metric-grid div { padding: .85rem; background: #edf2f7; border-radius: .5rem; min-width: 0; }
-dt { color: #596570; font-size: .875rem; }
-dd { margin: .15rem 0 0; font-weight: 700; overflow-wrap: break-word; overflow-wrap: anywhere; }
-.context { color: #596570; }
+.metric-grid div { padding: .85rem; background: #f2f4f7; border-radius: .5rem; min-width: 0; }
+dt { color: #656d76; font-size: .875rem; }
+dd { margin: .15rem 0 0; font-weight: 600; overflow-wrap: break-word; overflow-wrap: anywhere; }
+.context { color: #656d76; }
 .table-scroll { min-width: 0; max-width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: .65rem; text-align: left; border-bottom: 1px solid #dce5e0; }
@@ -28,7 +28,7 @@ th, td { padding: .65rem; text-align: left; border-bottom: 1px solid #dce5e0; }
 .state-available { color: #17613e; }
 .state-planned { color: #765300; }
 .state-missing { color: #9a2929; }
-a { color: #22558b; }
+a { color: #8f2d15; }
 a:focus { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 a:focus:not(:focus-visible) { outline: none; }
 a:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }

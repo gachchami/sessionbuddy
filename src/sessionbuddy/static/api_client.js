@@ -94,6 +94,10 @@
     try {
       response = await fetch(path, { credentials: "same-origin", ...options, headers });
     } catch (cause) {
+      if (cause && cause.name === "AbortError") {
+        // The page that asked has been replaced; nothing should act on this.
+        throw new ApiError("This request was cancelled.", { code: "aborted", cause });
+      }
       throw new ApiError("We could not connect. Check your connection and try again.", {
         code: "network_error",
         retryable: true,
@@ -113,7 +117,13 @@
       }
       return inFlightSessionRequest;
     }
-    return performRequest(path, options, behavior);
+    // Page requests end with their page: the shell aborts SessionBuddyPage's
+    // signal when it swaps the body, so a slow response can never act on a
+    // page that is gone. The shared session read above stays unscoped, and
+    // shell-owned calls opt out with `behavior.persistent`.
+    const pageSignal = behavior.persistent ? undefined : window.SessionBuddyPage?.signal;
+    const signal = options.signal || pageSignal;
+    return performRequest(path, signal ? { ...options, signal } : options, behavior);
   }
 
   function responseFilename(response, fallback = "download") {
@@ -261,6 +271,13 @@
 
   function message(error, fallback = "The request could not be completed. Try again.") {
     return error instanceof ApiError ? error.message : fallback;
+  }
+
+  // Authored, user-facing failures thrown by page code. `message()` hides raw
+  // JavaScript errors behind a fallback, so intentional copy must travel as an
+  // ApiError to reach the status region verbatim.
+  function userError(text, options = {}) {
+    return new ApiError(text, { code: "user_message", ...options });
   }
 
   function messageWithReference(value, error) {
@@ -553,6 +570,7 @@
     isStaleCursor,
     message,
     messageWithReference,
+    userError,
     parseResponse,
     refreshCharacterCounters: formValidation.installCharacterCounters,
     showValidationErrors: formValidation.showServerValidationErrors,
