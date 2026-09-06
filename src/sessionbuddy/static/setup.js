@@ -65,7 +65,6 @@
     const adminFirstName = String(values.admin_first_name).trim();
     const adminLastName = String(values.admin_last_name).trim();
     const adminName = `${adminFirstName} ${adminLastName}`;
-    form.elements.deployment_key.value = "";
     const payload = {
       organization_name: values.organization_name,
       admin_name: adminName,
@@ -84,6 +83,9 @@
         body: JSON.stringify(payload)
       });
       setupCompleted = true;
+      // Clear the secret only once it has done its job; a failed attempt keeps
+      // it in place so the operator can retry without re-fetching the key.
+      form.elements.deployment_key.value = "";
       await window.SessionBuddyApi.request("/api/v1/auth/magic-links", {
         method: "POST",
         headers: { "content-type": "application/json" },
