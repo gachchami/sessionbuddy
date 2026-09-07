@@ -15,6 +15,12 @@ hidden state. Desktop/mobile page audits pass accessibility and overflow checks;
 complete interaction verification and the release gate remain separate criteria.
 This visual work has not been deployed.
 
+Organizer Home now gives the selected organization the main heading and keeps
+the filtered count beside Events. Its continuous pale-blue navigation rail,
+flat actions, stronger event names, optional real logos, and aligned metadata
+replace Home's detached-card treatment. Recent activity remains secondary;
+permissions, organization switching, and action destinations are unchanged.
+
 ## Platform and Engine Room
 
 In progress: organization-scoped admin invitations separate the fixed three-day
@@ -705,7 +711,7 @@ permission for the selected organization or event.
 `/admin` is the canonical event switcher and operational ledger, with
 organization selection, server-backed filters/search/sort, cursor pagination,
 proposal and review attention links, publication state, and a manager-only
-Recent changes rail. Event creation and duplication use `/admin/events/new`;
+Recent activity rail. Event creation and duplication use `/admin/events/new`;
 editing uses `/admin/events/{event_id}/settings`, including branding, email,
 three-way stale reconciliation, and explicit lifecycle controls. The former
 `/admin/events` document is a `302` compatibility alias to `/admin`, and its

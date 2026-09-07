@@ -39,7 +39,7 @@ Approved direction:
 - organization identity and an organization selector when more than one is
   manageable;
 - Create event and the event ledger as the primary job;
-- a compact, manager-only Recent changes rail after the ledger;
+- a compact, manager-only Recent activity rail after the ledger;
 - quiet access to organization settings;
 - no separate global Events destination and no create-organization workflow.
 
