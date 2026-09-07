@@ -347,7 +347,11 @@ def test_source_wiring_cfp_workspace_loads_directly_without_retry_workarounds() 
     assert "setTimeout" not in loader
     assert "return api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`)" in loader
     restore = script.split("async function restoreSession() {", 1)[1]
-    assert "const workspace = await loadWorkspace(eventId);" in restore
+    # One read per workspace: the routed id's early read is reused when it
+    # matches the session-derived id, otherwise a single direct read runs.
+    assert "const earlyWorkspace = routedEventId ? loadWorkspace(routedEventId) : null;" in restore
+    reuse = "earlyWorkspace && eventId === routedEventId ? earlyWorkspace : loadWorkspace(eventId)"
+    assert reuse in restore
     assert "/api/v1/admin/events/${encodeURIComponent(workspace.event_id)}" in restore
 
 
@@ -387,7 +391,7 @@ def test_share_builder_initializes_before_account_access_finishes() -> None:
     script = (STATIC / "event_workspace.js").read_text()
     assert 'id="generate-token" disabled' in page
     assert script.index("renderEmbed(); renderRegistry();") < script.index(
-        'await api("/api/v1/auth/session")'
+        'const sessionPromise = api("/api/v1/auth/session")'
     )
     assert 'byId("generate-token").disabled = false' in script
 

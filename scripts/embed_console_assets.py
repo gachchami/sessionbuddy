@@ -97,8 +97,6 @@ ASSETS = {
     "biography_disclosure.js": "BIOGRAPHY_DISCLOSURE_JS",
 }
 BINARY_ASSETS = {
-    "aie-new-york-2026.jpg": "AIE_NEW_YORK_2026_JPG",
-    "aie-code-sf-2026.jpg": "AIE_CODE_SF_2026_JPG",
     "fonts/dm-sans-latin-wght-normal.woff2": "DM_SANS_LATIN_WGHT_NORMAL_WOFF2",
 }
 
@@ -195,19 +193,19 @@ CONTENT_ADDRESSED_CSS_ASSETS = (
     ),
 )
 SHARED_ASSET_VERSIONS = {
-    "/product/assets/product.css": "91",
-    "/app-shell/assets/app-shell.css": "28",
-    "/app-shell/assets/api-client.js": "10",
-    "/app-shell/assets/app-shell.js": "38",
-    "/landing/assets/landing.css": "15",
+    "/product/assets/product.css": "112",
+    "/app-shell/assets/app-shell.css": "38",
+    "/app-shell/assets/api-client.js": "12",
+    "/app-shell/assets/app-shell.js": "45",
+    "/landing/assets/landing.css": "64",
     "/admin/onboarding/assets/onboarding.css": "5",
-    "/admin/agenda/assets/agenda.css": "7",
-    "/docs/assets/api-docs.css": "3",
+    "/admin/agenda/assets/agenda.css": "8",
+    "/docs/assets/api-docs.css": "6",
     "/engine-room/assets/console.css": "engine-room-2",
     "/app-shell/assets/error-page.css": "4",
-    "/schedule/assets/schedule.css": "14",
-    "/setup/assets/setup.css": "7",
-    "/speaker/assets/speaker.css": "27",
+    "/schedule/assets/schedule.css": "17",
+    "/setup/assets/setup.css": "8",
+    "/speaker/assets/speaker.css": "29",
 }
 
 
@@ -236,10 +234,18 @@ def _versioned_css(filename: str, content: str) -> str:
 
 
 def sync_content_addresses(*, check: bool) -> None:
-    for css_name, _, _ in CONTENT_ADDRESSED_CSS_ASSETS:
-        path = STATIC / css_name
+    # Stylesheets that @import a shared asset carry the same hand-written
+    # version as the HTML pages; without this pass a bump leaves them stale and
+    # browsers keep the old file for every page that reaches it through CSS.
+    css_paths = {STATIC / css_name for css_name, _, _ in CONTENT_ADDRESSED_CSS_ASSETS}
+    css_paths.update(STATIC.rglob("*.css"))
+    for path in sorted(css_paths):
+        css_name = str(path.relative_to(STATIC))
         current = path.read_text(encoding="utf-8")
         expected = _versioned_css(css_name, current)
+        for asset_path, version in SHARED_ASSET_VERSIONS.items():
+            pattern = re.escape(asset_path) + r"(?:\?v=[A-Za-z0-9._-]+)?"
+            expected = re.sub(pattern, f"{asset_path}?v={version}", expected)
         if current == expected:
             continue
         if check:
