@@ -12,10 +12,150 @@
     "recapture_trigger": "Any relevant UI, route, status, or fixture change"
   },
   "figures": [
-    {"id":"organizer-home","figure_number":1,"file":"assets/organizer-home.jpg","role":"Organizer","route":"/admin","purpose":"Choose an event from the organization workspace","captured_at":"2026-08-18","revision":"unfrozen-working-tree","fixture_version":"legacy-local-evidence","width_px":1007,"height_px":906,"print_width_in":6.7,"callouts":[{"number":1,"label":"Organization identity"},{"number":2,"label":"Current event list"},{"number":3,"label":"Organization settings"}],"recapture_required":true},
-    {"id":"event-overview","figure_number":2,"file":"assets/event-overview.jpg","role":"Organizer","route":"/admin/events/{event_id}","purpose":"Orient to the event workspace and lifecycle status","captured_at":"2026-08-18","revision":"unfrozen-working-tree","fixture_version":"legacy-local-evidence","width_px":1007,"height_px":906,"print_width_in":6.7,"callouts":[{"number":1,"label":"Event identity"},{"number":2,"label":"Lifecycle navigation"},{"number":3,"label":"Program state"}],"recapture_required":true},
-    {"id":"cfp-builder","figure_number":3,"file":"assets/cfp-builder.jpg","role":"Organizer","route":"/admin/events/{event_id}/cfp","purpose":"Configure and publish the call for proposals","captured_at":"2026-08-18","revision":"unfrozen-working-tree","fixture_version":"legacy-local-evidence","width_px":992,"height_px":893,"print_width_in":6.7,"callouts":[{"number":1,"label":"Published URL"},{"number":2,"label":"Preview action"},{"number":3,"label":"Form sections"}],"recapture_required":true},
-    {"id":"agenda-editor","figure_number":4,"file":"assets/agenda-editor.jpg","role":"Organizer","route":"/admin/events/{event_id}/agenda","purpose":"Place an accepted session in the draft agenda","captured_at":"2026-08-18","revision":"unfrozen-working-tree","fixture_version":"legacy-local-evidence","width_px":992,"height_px":893,"print_width_in":6.7,"callouts":[{"number":1,"label":"Draft/published revision"},{"number":2,"label":"Schedule views"},{"number":3,"label":"Publish action"}],"recapture_required":true},
-    {"id":"public-schedule","figure_number":5,"file":"assets/public-schedule.jpg","role":"Public context","route":"/events/{event_id}/schedule","purpose":"Verify the published result of organizer work","captured_at":"2026-08-18","revision":"unfrozen-working-tree","fixture_version":"legacy-local-evidence","width_px":992,"height_px":893,"print_width_in":6.7,"callouts":[{"number":1,"label":"Published revision"},{"number":2,"label":"Search and filters"},{"number":3,"label":"Itinerary controls"}],"recapture_required":true}
+    {
+      "id": "organizer-home",
+      "figure_number": 1,
+      "file": "assets/organizer-home.jpg",
+      "role": "Organizer",
+      "route": "/admin",
+      "purpose": "Choose an event from the organization workspace",
+      "captured_at": "2026-09-08",
+      "revision": "unfrozen-working-tree",
+      "fixture_version": "design-draft-unfrozen",
+      "width_px": 1440,
+      "height_px": 1000,
+      "print_width_in": 6.7,
+      "callouts": [
+        {
+          "number": 1,
+          "label": "Organization identity"
+        },
+        {
+          "number": 2,
+          "label": "Current event list"
+        },
+        {
+          "number": 3,
+          "label": "Organization settings"
+        }
+      ],
+      "recapture_required": true
+    },
+    {
+      "id": "event-overview",
+      "figure_number": 2,
+      "file": "assets/event-overview.jpg",
+      "role": "Organizer",
+      "route": "/admin/events/{event_id}",
+      "purpose": "Orient to the event workspace and lifecycle status",
+      "captured_at": "2026-09-08",
+      "revision": "unfrozen-working-tree",
+      "fixture_version": "design-draft-unfrozen",
+      "width_px": 1440,
+      "height_px": 1000,
+      "print_width_in": 6.7,
+      "callouts": [
+        {
+          "number": 1,
+          "label": "Event identity"
+        },
+        {
+          "number": 2,
+          "label": "Lifecycle navigation"
+        },
+        {
+          "number": 3,
+          "label": "Program state"
+        }
+      ],
+      "recapture_required": true
+    },
+    {
+      "id": "cfp-builder",
+      "figure_number": 3,
+      "file": "assets/cfp-builder.jpg",
+      "role": "Organizer",
+      "route": "/admin/events/{event_id}/cfp",
+      "purpose": "Configure and publish the call for proposals",
+      "captured_at": "2026-09-08",
+      "revision": "unfrozen-working-tree",
+      "fixture_version": "design-draft-unfrozen",
+      "width_px": 1440,
+      "height_px": 1000,
+      "print_width_in": 6.7,
+      "callouts": [
+        {
+          "number": 1,
+          "label": "Published URL"
+        },
+        {
+          "number": 2,
+          "label": "Preview action"
+        },
+        {
+          "number": 3,
+          "label": "Form sections"
+        }
+      ],
+      "recapture_required": true
+    },
+    {
+      "id": "agenda-editor",
+      "figure_number": 4,
+      "file": "assets/agenda-editor.jpg",
+      "role": "Organizer",
+      "route": "/admin/events/{event_id}/agenda",
+      "purpose": "Place an accepted session in the draft agenda",
+      "captured_at": "2026-09-08",
+      "revision": "unfrozen-working-tree",
+      "fixture_version": "design-draft-unfrozen",
+      "width_px": 1440,
+      "height_px": 1000,
+      "print_width_in": 6.7,
+      "callouts": [
+        {
+          "number": 1,
+          "label": "Draft/published revision"
+        },
+        {
+          "number": 2,
+          "label": "Schedule views"
+        },
+        {
+          "number": 3,
+          "label": "Publish action"
+        }
+      ],
+      "recapture_required": true
+    },
+    {
+      "id": "public-schedule",
+      "figure_number": 5,
+      "file": "assets/public-schedule.jpg",
+      "role": "Public context",
+      "route": "/events/{event_id}/schedule",
+      "purpose": "Verify the published result of organizer work",
+      "captured_at": "2026-09-08",
+      "revision": "unfrozen-working-tree",
+      "fixture_version": "design-draft-unfrozen",
+      "width_px": 1440,
+      "height_px": 1000,
+      "print_width_in": 6.7,
+      "callouts": [
+        {
+          "number": 1,
+          "label": "Published revision"
+        },
+        {
+          "number": 2,
+          "label": "Search and filters"
+        },
+        {
+          "number": 3,
+          "label": "Itinerary controls"
+        }
+      ],
+      "recapture_required": true
+    }
   ]
 }

@@ -16,11 +16,14 @@ tutorial and its print edition.
 - `tools/render_pdf.mjs` deterministically renders every page and a PNG contact sheet.
 
 The guide targets revision `859bfbcbaa6b6ccf1cfc0b684a6eef6f08ce39b0`
-but is a design draft using local evidence captured on 2026-08-17 and 2026-08-18. The local Worker
-could not be restarted for a fresh capture because Docker reported that its
-storage was full. Every image is marked `recapture_required`; the final release
-filename is deliberately withheld until one frozen-fixture capture passes the
-manifest verifier.
+but is a design draft. Every figure was recaptured on 2026-09-08 from the local
+Worker against the DevFlow Conf 2027 fixture, at the contract viewport of
+1440 x 1000, after the interface moved to the current design system; the earlier
+2026-08-17 and 2026-08-18 images no longer resembled the product. The working
+tree was unfrozen at capture time, so each figure records
+`revision: unfrozen-working-tree` and stays marked `recapture_required`; the
+final release filename is deliberately withheld until one frozen-fixture
+capture passes the manifest verifier.
 
 ## Build
 
