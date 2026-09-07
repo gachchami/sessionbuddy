@@ -129,10 +129,10 @@ test.describe("public smoke checks", () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole("heading", {
       level: 1,
-      name: "From open call to published agenda.",
+      name: "Open source software that manages your events.",
     })).toBeVisible();
     await expect(page.getByRole("link", { name: "Sign in", exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: "Explore event" }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "See live programs" }).first()).toBeVisible();
   });
 
   test("public homepage discovers an open call from the public events API", async ({ page }) => {
@@ -157,7 +157,7 @@ test.describe("public smoke checks", () => {
 
     await page.goto("/");
 
-    await expect(page.getByRole("heading", { name: "Explore events" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Programs running on SessionBuddy" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Agent Platforms Summit" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Call for Proposals →" })).toHaveAttribute(
       "href",
@@ -707,7 +707,7 @@ test.describe("administration empty states", () => {
     await eventEditor.locator('[name="start_date"]').fill("2026-09-12");
     await eventEditor.locator('[name="end_date"]').fill("2026-09-12");
     await expect(page.locator("#date-time-preview")).toContainText(await timeZone.inputValue());
-    await expect(eventEditor.getByRole("button", { name: "Create active event" })).toBeEnabled();
+    await expect(eventEditor.getByRole("button", { name: "Create event and continue setup" })).toBeEnabled();
   await timeZone.selectOption("Asia/Kolkata");
     await page.getByRole("textbox", { name: "Event name" }).fill("Timezone Rehearsal");
     await page.getByRole("textbox", { name: "Location" }).fill("Rehearsal Hall, Pune");
@@ -718,11 +718,11 @@ test.describe("administration empty states", () => {
     await page.getByRole("combobox", { name: "Attendance format" }).selectOption("in_person");
     await page.getByText("Branding", { exact: true }).click();
     await page.getByRole("textbox", { name: "Event website" }).fill("http://example.test");
-    await eventEditor.getByRole("button", { name: "Create active event" }).click();
+    await eventEditor.getByRole("button", { name: "Create event and continue setup" }).click();
     expect(createdEvent).toBeNull();
     await expect(page.getByRole("textbox", { name: "Event website" })).toHaveAttribute("aria-invalid", "true");
     await page.getByRole("textbox", { name: "Event website" }).fill("https://example.test");
-    await eventEditor.getByRole("button", { name: "Create active event" }).click();
+    await eventEditor.getByRole("button", { name: "Create event and continue setup" }).click();
     expect(createdEvent).toMatchObject({
       name: "Timezone Rehearsal",
       starts_at_ms: Date.UTC(2026, 8, 12, 3, 30),
@@ -897,6 +897,8 @@ test.describe("administration empty states", () => {
     await page.route(`**/api/v1/admin/events/${eventId}/speaker-targets`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/submissions`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [], total: 0 }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "round-a" }) }));
+    // The overview also lists every round so a drafted round is not mistaken for none.
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ id: "round-a", status: "open" }] }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/agenda`, (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not started" }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/cfp`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "Open Source Summit 2026", event_starts_at_ms: Date.UTC(2026, 10, 12, 3, 30), published_form: { slug: "open-source-summit", cover_image_url: "/landing/assets/sessionbuddy-favicon.svg", logo_url: "/landing/assets/sessionbuddy-favicon.svg" } }) }));
 
@@ -910,12 +912,12 @@ test.describe("administration empty states", () => {
     await expect(page.getByRole("heading", { name: "Open Source Summit 2026" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Edit event" })).toHaveAttribute("href", `/admin/events/${eventId}/settings`);
     await expect(page.locator(".event-overview-public-preview")).toHaveCount(0);
-    const eventStatus = page.locator(".event-signal-list");
+    const eventStatus = page.locator("#launch-readiness");
     await expect(eventStatus).toBeVisible();
-    await expect(eventStatus.getByText("0 submitted", { exact: true })).toBeVisible();
-    await expect(eventStatus.getByText("0 confirmed", { exact: true })).toBeVisible();
-    await expect(eventStatus.getByText("0 sessions", { exact: true })).toBeVisible();
-    await expect(eventStatus.getByRole("link", { name: "CFP", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/cfp`);
+    await expect(eventStatus.getByText(/0 received/)).toBeVisible();
+    await expect(eventStatus.getByText("0 confirmed of 0 invited", { exact: true })).toBeVisible();
+    await expect(eventStatus.getByText("Not started", { exact: true })).toBeVisible();
+    await expect(eventStatus.getByRole("link", { name: "Call for proposals", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/cfp`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
 

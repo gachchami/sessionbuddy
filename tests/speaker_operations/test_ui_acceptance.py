@@ -85,13 +85,16 @@ def test_speaker_participation_status_and_csv_duplicate_review_are_exposed() -> 
 def test_dashboard_reconciles_within_five_seconds_and_after_reconnect() -> None:
     javascript = source("admin_onboarding.js")
     assert "const REFRESH_MS = 5000" in javascript
-    assert "setInterval(() => refresh(), REFRESH_MS)" in javascript
+    # Timer and push refreshes are background reloads: they must never discard
+    # pages the organizer loaded or move keyboard focus, so they pass the flag
+    # the loader uses to yield while the results panel is in use.
+    assert "setInterval(() => refresh({ background: true }), REFRESH_MS)" in javascript
     assert 'addEventListener("online", () => refresh' in javascript
     assert 'addEventListener("pageshow"' in javascript
     assert 'addEventListener("visibilitychange"' in javascript
     assert "BroadcastChannel" in javascript
     # Push is an invalidation only: every hint returns to the snapshot loader.
-    assert 'addEventListener("message", () => refresh())' in javascript
+    assert 'addEventListener("message", () => refresh({ background: true }))' in javascript
     assert 'sessionbuddy:onboarding-invalidated", () => refresh()' in javascript
 
 

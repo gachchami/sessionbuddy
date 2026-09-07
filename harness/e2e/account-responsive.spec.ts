@@ -525,7 +525,7 @@ test.describe("account profile responsive design", () => {
     await page.getByLabel("Choose image").setInputFiles({
       name: "headshot.jpeg",
       mimeType: "image/jpg",
-      buffer: readFileSync(resolve(staticRoot, "aie-new-york-2026.jpg")),
+      buffer: Buffer.from("/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==", "base64"),
     });
     await expect(page.locator("#headshot-preview")).toBeVisible();
     await expect(page.getByRole("status")).toContainText("Profile photo selected: headshot.jpeg");
@@ -707,6 +707,112 @@ test.describe("account profile responsive design", () => {
     );
     expect(transferBody).toEqual({ email: "manager@example.test" });
     await expect(page.getByRole("heading", { name: "Event ownership recovery" })).toHaveCount(0);
+  });
+
+  test("a two-organization account edits one organization at a time", async ({ page }) => {
+    await serveAccountPage(page);
+    const first = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const second = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const session = {
+      authenticated: true,
+      user_id: "multi-owner",
+      email: "owner@example.test",
+      display_name: "Organization Owner",
+      profile_complete: true,
+      csrf_token: "browser-test-csrf",
+      account_roles: ["organizer"],
+      active_role: "organizer",
+      default_role: "organizer",
+      organization_id: first,
+      organization_name: "Alpha Events",
+      ...workspaceContract("organizer", "ready", "/admin"),
+      organization_access: [
+        { organization_id: first, organization_name: "Alpha Events", permissions: ["owner"] },
+        { organization_id: second, organization_name: "Beta Summits", permissions: ["manage"] },
+      ],
+      event_access: [],
+    };
+    const names: Record<string, string> = { [first]: "Alpha Events", [second]: "Beta Summits" };
+    const requested: string[] = [];
+    const activity = (id: string, index: number, resourceType: string, subject: string) => ({
+      activity_id: `${id.slice(0, 4)}-${index}`,
+      actor_id: "U1",
+      actor_name: names[id],
+      operation: "update",
+      resource_type: resourceType,
+      resource_id: `R${index}`,
+      subject_name: subject,
+      event_id: null,
+      occurred_at_ms: Date.UTC(2026, 7, 16, 10, index),
+    });
+    const activities: Record<string, unknown[]> = {
+      [first]: [activity(first, 1, "event", "Alpha Day"), activity(first, 2, "proposal", "Alpha Talk")],
+      [second]: [
+        activity(second, 1, "event", "Beta Conf"),
+        activity(second, 2, "event", "Beta Meetup"),
+        activity(second, 3, "proposal", "Beta Talk"),
+        activity(second, 4, "resource_access_grant", "editor@example.test"),
+      ],
+    };
+    await page.route("**/api/v1/auth/session", (route) => route.fulfill({ json: session }));
+    await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({ json: { data: [
+      { id: first, name: "Alpha Events", status: "active", version: 1, event_count: 2, pending_review_count: 0 },
+      { id: second, name: "Beta Summits", status: "active", version: 1, event_count: 1, pending_review_count: 0 },
+    ] } }));
+    await page.route(`**/api/v1/admin/organizations/${second}`, (route) => route.fulfill({
+      json: { id: second, name: route.request().postDataJSON().name, status: "active", version: 2, event_count: 1, pending_review_count: 0 },
+    }));
+    await page.route(/\/api\/v1\/admin\/organizations\/[^/]+\/(access-grants|admin-invitations|activities)$/, async (route) => {
+      const url = new URL(route.request().url());
+      const [, , , , , organizationId, resource] = url.pathname.split("/");
+      requested.push(`${organizationId}/${resource}`);
+      if (resource === "access-grants") {
+        return route.fulfill({ json: { data: [{ user_id: "multi-owner", email: "owner@example.test", permission: "owner", status: "active" }] } });
+      }
+      if (resource === "admin-invitations") return route.fulfill({ json: { data: [] } });
+      if (organizationId === first) {
+        // The first organization answers slowly so its rows would land after a switch.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      return route.fulfill({ json: { data: activities[organizationId] } });
+    });
+
+    await page.goto(`/admin/organization?organization_id=${second}`);
+
+    const title = page.locator("#organization-settings-title");
+    await expect(title).toHaveText("Beta Summits");
+    const switcher = page.locator("#organization-switcher");
+    await expect(switcher).toBeVisible();
+    await expect(switcher).toHaveValue(second);
+    await expect(page.locator("#organization-activity-summary")).toHaveText("Showing all 4 changes.");
+    // Invitations are requested only after access grants resolve, so poll.
+    await expect.poll(() => [...new Set(requested)].sort()).toEqual([
+      `${second}/access-grants`, `${second}/activities`, `${second}/admin-invitations`,
+    ].sort());
+
+    await page.locator("#organization-activity-filters").getByRole("button", { name: /^Events/ }).click();
+    await expect(page.locator("#organization-activity-list .organization-activity-item")).toHaveCount(2);
+    await expect(page.locator("#organization-activity-summary")).toHaveText("Showing 2 of the 4 most recent changes.");
+
+    await page.locator("#organization-settings form").first().getByLabel("Organization name").fill("Beta Summits Renamed");
+    await page.getByRole("button", { name: "Save organization" }).click();
+    await expect(title).toHaveText("Beta Summits Renamed");
+    await expect(switcher.locator("option[value=\"" + second + "\"]")).toHaveText("Beta Summits Renamed");
+
+    // Switch to the slow first organization, then straight back: the late
+    // response for the first organization must never paint the second's list.
+    await switcher.selectOption(first);
+    await expect(page).toHaveURL(new RegExp(`organization_id=${first}`));
+    await expect(title).toHaveText("Alpha Events");
+    await switcher.selectOption(second);
+    await expect(page).toHaveURL(new RegExp(`organization_id=${second}`));
+    await expect(title).toHaveText("Beta Summits Renamed");
+    await expect(title).toBeFocused();
+    await expect(page.getByRole("status").first()).toHaveText("Now showing Beta Summits Renamed.");
+    await page.waitForTimeout(2000);
+    await expect(page.locator("#organization-activity-list .organization-activity-item")).toHaveCount(4);
+    await expect(page.locator("#organization-activity-list")).not.toContainText("Alpha Day");
+    await expect(page.locator("#organization-activity-list")).toContainText("Beta Conf");
   });
 
   test("a retired organization edit fact does not reveal access administration", async ({ page }) => {

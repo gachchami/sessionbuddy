@@ -25,7 +25,7 @@ def test_source_wiring_landing_demo_promise_is_gated_with_demo_personas() -> Non
     markup = (STATIC / "landing.html").read_text()
     scripts = (STATIC / "demo_access.js").read_text()
 
-    assert 'class="demo-section" data-demo-panel' in markup
+    assert 'class="slot slot--demo" data-demo-panel' in markup
     assert 'data-demo-panel aria-labelledby="demo-section-title" hidden' in markup
     assert 'closest("[data-demo-panel]")?.removeAttribute("hidden")' in scripts
 

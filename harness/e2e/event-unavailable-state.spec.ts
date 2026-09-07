@@ -120,7 +120,7 @@ test("event overview renders recent activity as a compact list", async ({ page }
   }));
 
   await page.goto("/admin/events/activity-event");
-  await expect(page.getByRole("heading", { name: "Recent changes" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Recent activity" })).toBeVisible();
   const activity = page.locator("#event-activity");
   await expect(activity.getByText("Dana Demo updated call for proposals CFP for Activity Summit")).toBeVisible();
   await expect(activity.getByText("1 minute ago")).toBeVisible();

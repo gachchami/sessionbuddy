@@ -40,7 +40,7 @@ test.describe("reference design local rendered page audit", () => {
   test("organizer and published event surfaces", async ({ page }) => {
     await page.goto("/sign-in?redirect=%2Fadmin");
     await page.getByRole("button", { name: "Sign in as demo organizer", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Organizer workspace", exact: true })).toBeVisible();
+    await expect(page.locator("#workspace-title")).toBeVisible();
     const eventLink = page.locator('main a[href^="/admin/events/"]').filter({ hasText: /.+/ }).first();
     await expect(eventLink).toBeVisible();
     // Discover an existing event from actual rendered links, never create one.

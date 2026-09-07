@@ -38,7 +38,9 @@ def test_evaluation_round_dates_use_the_event_time_zone() -> None:
     assert 'id="round-time-zone-context"' in page
     assert page.count('aria-describedby="round-time-zone-context"') == 2
     assert 'id="round-time-zone"' in page
-    assert "state.timeZone = await loadEventTimeZone()" in script
+    # The event read starts alongside the session check and is awaited after it.
+    assert "const timeZonePromise = loadEventTimeZone();" in script
+    assert "state.timeZone = await timeZonePromise" in script
     assert 'byId("round-time-zone").textContent = state.timeZone' in script
     assert "const reviewOpens = inputMillis" in script
     assert "const reviewCloses = inputMillis" in script
@@ -52,7 +54,8 @@ def test_source_wiring_speaker_task_due_date_uses_the_event_time_zone() -> None:
     assert 'id="task-time-zone-context"' in page
     assert 'aria-describedby="task-time-zone-context"' in page
     assert 'id="task-time-zone"' in page
-    assert "const timeZone = await loadEventTimeZone()" in script
+    assert "const timeZonePromise = loadEventTimeZone();" in script
+    assert "const timeZone = await timeZonePromise" in script
     assert "if (!timeZone) return" in script
     assert "state.timeZone = timeZone" in script
     assert 'byId("task-time-zone").textContent = state.timeZone' in script
